@@ -6,17 +6,7 @@
 #include <optional>
 
 #include "VulkanInstance.h"
-
-struct QueueFamilyIndices
-{
-    std::optional<uint32_t> graphicsFamily;
-    std::optional<uint32_t> presentFamily;
-
-    bool isComplete()
-    {
-        return graphicsFamily.has_value() && presentFamily.has_value();
-    }
-};
+#include "VulkanDevice.h"
 
 struct SwapChainSupportDetails
 {
@@ -39,8 +29,6 @@ private:
     void cleanup();
 
     void createSurface();
-    void pickPhysicalDevice();
-    void createLogicalDevice();
     void createSwapChain();
     void createImageViews();
     void createRenderPass();
@@ -58,7 +46,6 @@ private:
     vk::ShaderModule vertShaderModule;
     vk::ShaderModule fragShaderModule;
 
-    QueueFamilyIndices findQueueFamilies(vk::PhysicalDevice device);
     SwapChainSupportDetails querySwapChainSupport(vk::PhysicalDevice device);
     vk::SurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR> &availableFormats);
     vk::PresentModeKHR chooseSwapPresentMode(const std::vector<vk::PresentModeKHR> &availablePresentModes);
@@ -69,11 +56,7 @@ private:
     std::unique_ptr<VulkanInstance> instance;
     vk::SurfaceKHR surface;
 
-    vk::PhysicalDevice physicalDevice = nullptr;
-    vk::Device device;
-
-    vk::Queue graphicsQueue;
-    vk::Queue presentQueue;
+    std::unique_ptr<VulkanDevice> device;
 
     vk::SwapchainKHR swapChain;
     std::vector<vk::Image> swapChainImages;
@@ -94,9 +77,6 @@ private:
     std::vector<vk::Fence> inFlightFences;
     size_t currentFrame = 0;
     const int MAX_FRAMES_IN_FLIGHT = 2;
-
-    const std::vector<const char *> deviceExtensions = {
-        VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 
     const bool enableValidationLayers = true;
 };
