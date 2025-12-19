@@ -1,0 +1,86 @@
+# Prerequisites
+*.d
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Linker files
+*.ilk
+
+# Debugger Files
+*.pdb
+*.ilk
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+# Debug information files
+*.dwo
+*.dwp
+
+# CMake build artifacts
+build/
+cmake_install.cmake
+CMakeCache.txt
+CMakeFiles/
+install_manifest.txt
+compile_commands.json  # Optional: keep if you want to share for clangd, remove if not
+
+# Visual Studio / MSVC specific
+*.sdf
+*.opensdf
+*.suo
+*.vcxproj.user
+ipch/
+*.iobj
+*.ipdb
+
+# VS Code workspace settings
+.vscode/*
+!.vscode/settings.json      # Share useful settings (e.g., formatters, extensions recommendations)
+!.vscode/tasks.json         # Useful for shared build tasks
+!.vscode/launch.json        # Essential for debugging
+!.vscode/extensions.json    # Recommended extensions for the team
+
+# Vulkan-specific generated files
+# SPIR-V shader outputs from glslc
+*.spv
+
+# Vulkan shader cache (driver-generated)
+gpu_cache/
+vk_layer_settings.txt
+
+# Other common temp files
+*.log
+*.tmp
+*.bak
+*.swp
+*~
+
+# OS-specific files
+.DS_Store
+Thumbs.db
