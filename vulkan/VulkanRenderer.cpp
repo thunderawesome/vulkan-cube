@@ -57,12 +57,10 @@ void VulkanRenderer::initVulkan()
     createSurface();
 
     vulkanDevice = std::make_unique<VulkanDevice>(vulkanInstance->get(), surface);
-
     vulkanSwapchain = std::make_unique<VulkanSwapchain>(*vulkanDevice, surface, window);
+    vulkanRenderPass = std::make_unique<VulkanRenderPass>(*vulkanDevice, *vulkanSwapchain);
 
-    createRenderPass();
-
-    vulkanSwapchain->createFramebuffers(renderPass);
+    vulkanSwapchain->createFramebuffers(vulkanRenderPass->get());
 
     createGraphicsPipeline();
     createCommandPool();
@@ -112,7 +110,7 @@ void VulkanRenderer::cleanup()
     vulkanDevice->getLogicalDevice().destroyPipelineLayout(pipelineLayout);
 
     // Render pass
-    vulkanDevice->getLogicalDevice().destroyRenderPass(renderPass);
+    vulkanDevice->getLogicalDevice().destroyRenderPass(vulkanRenderPass->get());
 
     // Shader modules
     vulkanDevice->getLogicalDevice().destroyShaderModule(fragShaderModule);
@@ -149,47 +147,6 @@ void VulkanRenderer::createSurface()
     }
 
     surface = vk::SurfaceKHR(rawSurface);
-}
-
-// ------------------------------------------------------------
-// Render Pass
-// ------------------------------------------------------------
-void VulkanRenderer::createRenderPass()
-{
-    vk::AttachmentDescription colorAttachment;
-    colorAttachment.format = vulkanSwapchain->getImageFormat();
-    colorAttachment.samples = vk::SampleCountFlagBits::e1;
-    colorAttachment.loadOp = vk::AttachmentLoadOp::eClear;
-    colorAttachment.storeOp = vk::AttachmentStoreOp::eStore;
-    colorAttachment.stencilLoadOp = vk::AttachmentLoadOp::eDontCare;
-    colorAttachment.stencilStoreOp = vk::AttachmentStoreOp::eDontCare;
-    colorAttachment.initialLayout = vk::ImageLayout::eUndefined;
-    colorAttachment.finalLayout = vk::ImageLayout::ePresentSrcKHR;
-
-    vk::AttachmentReference colorAttachmentRef(0, vk::ImageLayout::eColorAttachmentOptimal);
-
-    vk::SubpassDescription subpass;
-    subpass.pipelineBindPoint = vk::PipelineBindPoint::eGraphics;
-    subpass.colorAttachmentCount = 1;
-    subpass.pColorAttachments = &colorAttachmentRef;
-
-    vk::SubpassDependency dependency;
-    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-    dependency.dstSubpass = 0;
-    dependency.srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
-    dependency.dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
-    dependency.srcAccessMask = {};
-    dependency.dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
-
-    vk::RenderPassCreateInfo renderPassInfo;
-    renderPassInfo.attachmentCount = 1;
-    renderPassInfo.pAttachments = &colorAttachment;
-    renderPassInfo.subpassCount = 1;
-    renderPassInfo.pSubpasses = &subpass;
-    renderPassInfo.dependencyCount = 1;
-    renderPassInfo.pDependencies = &dependency;
-
-    renderPass = vulkanDevice->getLogicalDevice().createRenderPass(renderPassInfo);
 }
 
 // ------------------------------------------------------------
@@ -241,7 +198,7 @@ void VulkanRenderer::createGraphicsPipeline()
     vk::GraphicsPipelineCreateInfo pipelineInfo(
         {}, shaderStages, &vertexInputInfo, &inputAssembly, nullptr,
         &viewportState, &rasterizer, &multisampling, nullptr, &colorBlending,
-        nullptr, pipelineLayout, renderPass, 0);
+        nullptr, pipelineLayout, vulkanRenderPass->get(), 0);
 
     auto result = vulkanDevice->getLogicalDevice().createGraphicsPipeline(VK_NULL_HANDLE, pipelineInfo);
     if (result.result != vk::Result::eSuccess)
@@ -281,7 +238,7 @@ void VulkanRenderer::createCommandBuffers()
         clearColor.color = vk::ClearColorValue(std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f});
 
         vk::RenderPassBeginInfo renderPassInfo;
-        renderPassInfo.renderPass = renderPass;
+        renderPassInfo.renderPass = vulkanRenderPass->get();
         renderPassInfo.framebuffer = vulkanSwapchain->getFramebuffers()[i];
         renderPassInfo.renderArea.offset = vk::Offset2D(0, 0);
         renderPassInfo.renderArea.extent = vulkanSwapchain->getExtent();
@@ -397,7 +354,7 @@ void VulkanRenderer::recreateSwapChain()
 
     vulkanDevice->getLogicalDevice().waitIdle();
 
-    vulkanSwapchain->recreate(renderPass, window);
+    vulkanSwapchain->recreate(vulkanRenderPass->get(), window);
 
     // Free old command buffers before re-recording
     if (!commandBuffers.empty())
