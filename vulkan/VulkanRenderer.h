@@ -5,6 +5,8 @@
 #include <vector>
 #include <optional>
 
+#include "VulkanInstance.h"
+
 struct QueueFamilyIndices
 {
     std::optional<uint32_t> graphicsFamily;
@@ -36,8 +38,6 @@ private:
     void mainLoop();
     void cleanup();
 
-    void createInstance();
-    void setupDebugMessenger();
     void createSurface();
     void pickPhysicalDevice();
     void createLogicalDevice();
@@ -66,8 +66,7 @@ private:
 
     GLFWwindow *window;
 
-    vk::Instance instance;
-    vk::DebugUtilsMessengerEXT debugMessenger;
+    std::unique_ptr<VulkanInstance> instance;
     vk::SurfaceKHR surface;
 
     vk::PhysicalDevice physicalDevice = nullptr;
@@ -95,9 +94,6 @@ private:
     std::vector<vk::Fence> inFlightFences;
     size_t currentFrame = 0;
     const int MAX_FRAMES_IN_FLIGHT = 2;
-
-    const std::vector<const char *> validationLayers = {
-        "VK_LAYER_KHRONOS_validation"};
 
     const std::vector<const char *> deviceExtensions = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME};

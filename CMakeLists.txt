@@ -69,6 +69,7 @@ endfunction()
 add_executable(vulkan_cube
     main.cpp
     vulkan/VulkanRenderer.cpp
+    vulkan/VulkanInstance.cpp
 )
 
 target_link_libraries(vulkan_cube PRIVATE
