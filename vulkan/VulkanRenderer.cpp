@@ -53,8 +53,7 @@ void VulkanRenderer::initVulkan()
 {
     instance = std::make_unique<VulkanInstance>(true);
     createSurface();
-    pickPhysicalDevice();
-    createLogicalDevice();
+    device = std::make_unique<VulkanDevice>(instance->get(), surface);
     createSwapChain();
     createImageViews();
     createRenderPass();
@@ -73,49 +72,49 @@ void VulkanRenderer::mainLoop()
         drawFrame();
     }
 
-    device.waitIdle();
+    device->getLogicalDevice().waitIdle();
 }
 
 void VulkanRenderer::cleanup()
 {
     // Wait for GPU to finish
-    device.waitIdle();
+    device->getLogicalDevice().waitIdle();
 
     // Destroy sync objects
     for (auto &semaphore : imageAvailableSemaphores)
-        device.destroySemaphore(semaphore);
+        device->getLogicalDevice().destroySemaphore(semaphore);
     for (auto &semaphore : renderFinishedSemaphores)
-        device.destroySemaphore(semaphore);
+        device->getLogicalDevice().destroySemaphore(semaphore);
     for (auto &fence : inFlightFences)
-        device.destroyFence(fence);
+        device->getLogicalDevice().destroyFence(fence);
 
     // Command buffers and pool
-    device.freeCommandBuffers(commandPool, commandBuffers);
-    device.destroyCommandPool(commandPool);
+    device->getLogicalDevice().freeCommandBuffers(commandPool, commandBuffers);
+    device->getLogicalDevice().destroyCommandPool(commandPool);
 
     // Framebuffers
     for (auto framebuffer : swapChainFramebuffers)
-        device.destroyFramebuffer(framebuffer);
+        device->getLogicalDevice().destroyFramebuffer(framebuffer);
 
     // Pipeline and layout
-    device.destroyPipeline(graphicsPipeline);
-    device.destroyPipelineLayout(pipelineLayout);
+    device->getLogicalDevice().destroyPipeline(graphicsPipeline);
+    device->getLogicalDevice().destroyPipelineLayout(pipelineLayout);
 
     // Render pass
-    device.destroyRenderPass(renderPass);
+    device->getLogicalDevice().destroyRenderPass(renderPass);
 
     // Image views
     for (auto imageView : swapChainImageViews)
-        device.destroyImageView(imageView);
+        device->getLogicalDevice().destroyImageView(imageView);
 
     // Swapchain
-    device.destroySwapchainKHR(swapChain);
+    device->getLogicalDevice().destroySwapchainKHR(swapChain);
 
     // Additional swapchain cleanup (if needed)
     cleanupSwapChain();
 
     // Destroy logical device
-    device.destroy();
+    device->getLogicalDevice().destroy();
 
     // Destroy surface
     instance->get().destroySurfaceKHR(surface);
@@ -136,104 +135,11 @@ void VulkanRenderer::createSurface()
 }
 
 // ------------------------------------------------------------
-// Physical Device Selection
-// ------------------------------------------------------------
-void VulkanRenderer::pickPhysicalDevice()
-{
-    auto devices = instance->get().enumeratePhysicalDevices();
-    if (devices.empty())
-    {
-        throw std::runtime_error("failed to find GPUs with Vulkan support!");
-    }
-
-    for (const auto &device : devices)
-    {
-        if (findQueueFamilies(device).isComplete())
-        {
-            physicalDevice = device;
-            break;
-        }
-    }
-
-    if (!physicalDevice)
-    {
-        throw std::runtime_error("failed to find a suitable GPU!");
-    }
-}
-
-QueueFamilyIndices VulkanRenderer::findQueueFamilies(vk::PhysicalDevice device)
-{
-    QueueFamilyIndices indices;
-
-    auto queueFamilies = device.getQueueFamilyProperties();
-
-    int i = 0;
-    for (const auto &queueFamily : queueFamilies)
-    {
-        if (queueFamily.queueFlags & vk::QueueFlagBits::eGraphics)
-        {
-            indices.graphicsFamily = i;
-        }
-
-        if (device.getSurfaceSupportKHR(static_cast<uint32_t>(i), surface))
-        {
-            indices.presentFamily = i;
-        }
-
-        if (indices.isComplete())
-            break;
-
-        i++;
-    }
-
-    return indices;
-}
-
-// ------------------------------------------------------------
-// Logical Device Creation
-// ------------------------------------------------------------
-void VulkanRenderer::createLogicalDevice()
-{
-    QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
-
-    std::vector<vk::DeviceQueueCreateInfo> queueCreateInfos;
-    std::set<uint32_t> uniqueQueueFamilies = {indices.graphicsFamily.value(), indices.presentFamily.value()};
-
-    float queuePriority = 1.0f;
-    for (uint32_t queueFamily : uniqueQueueFamilies)
-    {
-        vk::DeviceQueueCreateInfo queueCreateInfo(
-            vk::DeviceQueueCreateFlags(),
-            queueFamily,
-            1,
-            &queuePriority);
-        queueCreateInfos.push_back(queueCreateInfo);
-    }
-
-    vk::PhysicalDeviceFeatures deviceFeatures{};
-
-    vk::DeviceCreateInfo createInfo;
-    createInfo.flags = vk::DeviceCreateFlags();
-    createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
-    createInfo.pQueueCreateInfos = queueCreateInfos.data();
-    createInfo.enabledLayerCount = 0; // We'll set this below if validation is enabled
-    createInfo.ppEnabledLayerNames = nullptr;
-    createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
-    createInfo.ppEnabledExtensionNames = deviceExtensions.data();
-    createInfo.pEnabledFeatures = &deviceFeatures;
-
-    device = physicalDevice.createDevice(createInfo);
-
-    graphicsQueue = device.getQueue(indices.graphicsFamily.value(), 0);
-    presentQueue = device.getQueue(indices.presentFamily.value(), 0);
-}
-
-// ------------------------------------------------------------
 // Swapchain
 // ------------------------------------------------------------
 void VulkanRenderer::createSwapChain()
 {
-    SwapChainSupportDetails swapChainSupport = querySwapChainSupport(physicalDevice);
+    SwapChainSupportDetails swapChainSupport = querySwapChainSupport(device->getPhysicalDevice());
 
     vk::SurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(swapChainSupport.formats);
     vk::PresentModeKHR presentMode = chooseSwapPresentMode(swapChainSupport.presentModes);
@@ -263,21 +169,20 @@ void VulkanRenderer::createSwapChain()
         VK_TRUE,
         nullptr);
 
-    // Fix: Recalculate queue family indices here
-    QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
+    // Use stored queue indices from VulkanDevice
+    uint32_t graphicsFamily = device->getGraphicsQueueFamily();
+    uint32_t presentFamily = device->getPresentQueueFamily();
 
-    if (indices.graphicsFamily != indices.presentFamily)
+    if (graphicsFamily != presentFamily)
     {
-        uint32_t queueFamilyIndices[] = {indices.graphicsFamily.value(), indices.presentFamily.value()};
-
+        uint32_t queueFamilyIndices[] = {graphicsFamily, presentFamily};
         createInfo.imageSharingMode = vk::SharingMode::eConcurrent;
         createInfo.queueFamilyIndexCount = 2;
         createInfo.pQueueFamilyIndices = queueFamilyIndices;
     }
 
-    swapChain = device.createSwapchainKHR(createInfo);
-
-    swapChainImages = device.getSwapchainImagesKHR(swapChain);
+    swapChain = device->getLogicalDevice().createSwapchainKHR(createInfo);
+    swapChainImages = device->getLogicalDevice().getSwapchainImagesKHR(swapChain);
     swapChainImageFormat = surfaceFormat.format;
     swapChainExtent = extent;
 }
@@ -286,22 +191,22 @@ void VulkanRenderer::cleanupSwapChain()
 {
     for (auto framebuffer : swapChainFramebuffers)
     {
-        device.destroyFramebuffer(framebuffer);
+        device->getLogicalDevice().destroyFramebuffer(framebuffer);
     }
 
     // Correct: pass count and pointer
-    device.freeCommandBuffers(commandPool, static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data());
+    device->getLogicalDevice().freeCommandBuffers(commandPool, static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data());
 
-    device.destroyPipeline(graphicsPipeline);
-    device.destroyPipelineLayout(pipelineLayout);
-    device.destroyRenderPass(renderPass);
+    device->getLogicalDevice().destroyPipeline(graphicsPipeline);
+    device->getLogicalDevice().destroyPipelineLayout(pipelineLayout);
+    device->getLogicalDevice().destroyRenderPass(renderPass);
 
     for (auto imageView : swapChainImageViews)
     {
-        device.destroyImageView(imageView);
+        device->getLogicalDevice().destroyImageView(imageView);
     }
 
-    device.destroySwapchainKHR(swapChain);
+    device->getLogicalDevice().destroySwapchainKHR(swapChain);
 }
 
 void VulkanRenderer::recreateSwapChain()
@@ -314,7 +219,7 @@ void VulkanRenderer::recreateSwapChain()
         glfwWaitEvents();
     }
 
-    device.waitIdle();
+    device->getLogicalDevice().waitIdle();
 
     cleanupSwapChain();
 
@@ -343,7 +248,7 @@ void VulkanRenderer::createImageViews()
             vk::ComponentMapping(),
             vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
 
-        swapChainImageViews[i] = device.createImageView(createInfo);
+        swapChainImageViews[i] = device->getLogicalDevice().createImageView(createInfo);
     }
 }
 
@@ -385,7 +290,7 @@ void VulkanRenderer::createRenderPass()
     renderPassInfo.dependencyCount = 1;
     renderPassInfo.pDependencies = &dependency;
 
-    renderPass = device.createRenderPass(renderPassInfo);
+    renderPass = device->getLogicalDevice().createRenderPass(renderPassInfo);
 }
 
 // ------------------------------------------------------------
@@ -397,10 +302,10 @@ void VulkanRenderer::createGraphicsPipeline()
     auto fragSPV = readFile("shaders/triangle.frag.spv");
 
     vk::ShaderModuleCreateInfo vertModuleInfo({}, vertSPV.size(), reinterpret_cast<const uint32_t *>(vertSPV.data()));
-    vertShaderModule = device.createShaderModule(vertModuleInfo);
+    vertShaderModule = device->getLogicalDevice().createShaderModule(vertModuleInfo);
 
     vk::ShaderModuleCreateInfo fragModuleInfo({}, fragSPV.size(), reinterpret_cast<const uint32_t *>(fragSPV.data()));
-    fragShaderModule = device.createShaderModule(fragModuleInfo);
+    fragShaderModule = device->getLogicalDevice().createShaderModule(fragModuleInfo);
 
     vk::PipelineShaderStageCreateInfo vertShaderStageInfo({}, vk::ShaderStageFlagBits::eVertex, vertShaderModule, "main");
     vk::PipelineShaderStageCreateInfo fragShaderStageInfo({}, vk::ShaderStageFlagBits::eFragment, fragShaderModule, "main");
@@ -427,7 +332,7 @@ void VulkanRenderer::createGraphicsPipeline()
     vk::PipelineColorBlendStateCreateInfo colorBlending({}, false, vk::LogicOp::eCopy, colorBlendAttachment);
 
     vk::PipelineLayoutCreateInfo pipelineLayoutInfo;
-    pipelineLayout = device.createPipelineLayout(pipelineLayoutInfo);
+    pipelineLayout = device->getLogicalDevice().createPipelineLayout(pipelineLayoutInfo);
 
     vk::GraphicsPipelineCreateInfo pipelineInfo(
         {},
@@ -445,7 +350,7 @@ void VulkanRenderer::createGraphicsPipeline()
         renderPass,
         0);
 
-    auto result = device.createGraphicsPipeline(VK_NULL_HANDLE, pipelineInfo);
+    auto result = device->getLogicalDevice().createGraphicsPipeline(VK_NULL_HANDLE, pipelineInfo);
     if (result.result != vk::Result::eSuccess)
     {
         throw std::runtime_error("failed to create graphics pipeline!");
@@ -470,7 +375,7 @@ void VulkanRenderer::createFramebuffers()
             swapChainExtent.height,
             1);
 
-        swapChainFramebuffers[i] = device.createFramebuffer(framebufferInfo);
+        swapChainFramebuffers[i] = device->getLogicalDevice().createFramebuffer(framebufferInfo);
     }
 }
 
@@ -479,11 +384,14 @@ void VulkanRenderer::createFramebuffers()
 // ------------------------------------------------------------
 void VulkanRenderer::createCommandPool()
 {
-    QueueFamilyIndices queueFamilyIndices = findQueueFamilies(physicalDevice);
+    // Get the graphics queue family index from the device (already known)
+    uint32_t graphicsFamily = device->getGraphicsQueueFamily();
 
-    vk::CommandPoolCreateInfo poolInfo(vk::CommandPoolCreateFlagBits::eResetCommandBuffer, queueFamilyIndices.graphicsFamily.value());
+    vk::CommandPoolCreateInfo poolInfo(
+        vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
+        graphicsFamily);
 
-    commandPool = device.createCommandPool(poolInfo);
+    commandPool = device->getLogicalDevice().createCommandPool(poolInfo);
 }
 
 void VulkanRenderer::createCommandBuffers()
@@ -495,7 +403,7 @@ void VulkanRenderer::createCommandBuffers()
         vk::CommandBufferLevel::ePrimary,
         static_cast<uint32_t>(commandBuffers.size()));
 
-    commandBuffers = device.allocateCommandBuffers(allocInfo);
+    commandBuffers = device->getLogicalDevice().allocateCommandBuffers(allocInfo);
 
     for (size_t i = 0; i < commandBuffers.size(); i++)
     {
@@ -535,9 +443,9 @@ void VulkanRenderer::createSyncObjects()
 
     for (size_t i = 0; i < 2; i++)
     {
-        imageAvailableSemaphores[i] = device.createSemaphore(semaphoreInfo);
-        renderFinishedSemaphores[i] = device.createSemaphore(semaphoreInfo);
-        inFlightFences[i] = device.createFence(fenceInfo);
+        imageAvailableSemaphores[i] = device->getLogicalDevice().createSemaphore(semaphoreInfo);
+        renderFinishedSemaphores[i] = device->getLogicalDevice().createSemaphore(semaphoreInfo);
+        inFlightFences[i] = device->getLogicalDevice().createFence(fenceInfo);
     }
 }
 
@@ -547,10 +455,10 @@ void VulkanRenderer::createSyncObjects()
 void VulkanRenderer::drawFrame()
 {
     // Wait for previous frame
-    (void)device.waitForFences(1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
+    (void)device->getLogicalDevice().waitForFences(1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 
     uint32_t imageIndex;
-    auto result = device.acquireNextImageKHR(swapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame], nullptr, &imageIndex);
+    auto result = device->getLogicalDevice().acquireNextImageKHR(swapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame], nullptr, &imageIndex);
 
     if (result == vk::Result::eErrorOutOfDateKHR)
     {
@@ -562,7 +470,7 @@ void VulkanRenderer::drawFrame()
         throw std::runtime_error("failed to acquire swap chain image!");
     }
 
-    (void)device.resetFences(1, &inFlightFences[currentFrame]);
+    (void)device->getLogicalDevice().resetFences(1, &inFlightFences[currentFrame]);
 
     // Submit command buffer
     vk::SubmitInfo submitInfo;
@@ -578,7 +486,7 @@ void VulkanRenderer::drawFrame()
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = signalSemaphores;
 
-    graphicsQueue.submit(submitInfo, inFlightFences[currentFrame]);
+    device->getGraphicsQueue().submit(submitInfo, inFlightFences[currentFrame]);
 
     // Present
     vk::PresentInfoKHR presentInfo;
@@ -589,7 +497,7 @@ void VulkanRenderer::drawFrame()
     presentInfo.pSwapchains = swapChains;
     presentInfo.pImageIndices = &imageIndex;
 
-    result = presentQueue.presentKHR(presentInfo);
+    result = device->getPresentQueue().presentKHR(presentInfo);
 
     if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR)
     {
