@@ -8,6 +8,7 @@
 #include "VulkanInstance.h"
 #include "VulkanDevice.h"
 #include "VulkanSwapchain.h"
+#include "VulkanRenderPass.h"
 
 class VulkanRenderer
 {
@@ -37,12 +38,12 @@ private:
     std::unique_ptr<VulkanInstance> vulkanInstance;
     std::unique_ptr<VulkanDevice> vulkanDevice;
     std::unique_ptr<VulkanSwapchain> vulkanSwapchain;
+    std::unique_ptr<VulkanRenderPass> vulkanRenderPass;
 
     // Surface (owned by renderer, passed to swapchain)
     vk::SurfaceKHR surface;
 
     // Rendering resources
-    vk::RenderPass renderPass;
     vk::PipelineLayout pipelineLayout;
     vk::Pipeline graphicsPipeline;
 

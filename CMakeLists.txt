@@ -72,6 +72,7 @@ add_executable(vulkan_cube
     vulkan/VulkanInstance.cpp
     vulkan/VulkanDevice.cpp
     vulkan/VulkanSwapchain.cpp
+    vulkan/VulkanRenderPass.cpp
 )
 
 target_link_libraries(vulkan_cube PRIVATE
