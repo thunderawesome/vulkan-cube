@@ -29,19 +29,6 @@ static std::vector<char> readFile(const std::string &filename)
 }
 
 // ------------------------------------------------------------
-// Debug callback
-// ------------------------------------------------------------
-static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
-    VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-    VkDebugUtilsMessageTypeFlagsEXT messageType,
-    const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
-    void *pUserData)
-{
-    std::cerr << "validation layer: " << pCallbackData->pMessage << std::endl;
-    return VK_FALSE;
-}
-
-// ------------------------------------------------------------
 // Constructor / Destructor / Run
 // ------------------------------------------------------------
 VulkanRenderer::VulkanRenderer(GLFWwindow *window) : window(window)
@@ -130,13 +117,8 @@ void VulkanRenderer::cleanup()
     // Destroy logical device
     device.destroy();
 
-    // Destroy surface — this is still valid (owned by VulkanRenderer)
+    // Destroy surface
     instance->get().destroySurfaceKHR(surface);
-
-    // VulkanInstance destructor will destroy:
-    // - debug messenger (if enabled)
-    // - instance
-    // So we don't need to do it here
 }
 
 // ------------------------------------------------------------
@@ -241,9 +223,6 @@ void VulkanRenderer::createLogicalDevice()
     createInfo.pEnabledFeatures = &deviceFeatures;
 
     device = physicalDevice.createDevice(createInfo);
-
-    // Initialize device-level functions
-    // VULKAN_HPP_DEFAULT_DISPATCHER.init(device);
 
     graphicsQueue = device.getQueue(indices.graphicsFamily.value(), 0);
     presentQueue = device.getQueue(indices.presentFamily.value(), 0);
@@ -568,7 +547,7 @@ void VulkanRenderer::createSyncObjects()
 void VulkanRenderer::drawFrame()
 {
     // Wait for previous frame
-    device.waitForFences(1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
+    (void)device.waitForFences(1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 
     uint32_t imageIndex;
     auto result = device.acquireNextImageKHR(swapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame], nullptr, &imageIndex);
@@ -583,7 +562,7 @@ void VulkanRenderer::drawFrame()
         throw std::runtime_error("failed to acquire swap chain image!");
     }
 
-    device.resetFences(1, &inFlightFences[currentFrame]);
+    (void)device.resetFences(1, &inFlightFences[currentFrame]);
 
     // Submit command buffer
     vk::SubmitInfo submitInfo;
