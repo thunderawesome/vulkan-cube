@@ -1,10 +1,6 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
-#define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
-#include <vulkan/vulkan.hpp>
-VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
-
 #include "VulkanRenderer.h"
 
 #include <iostream>
@@ -13,9 +9,6 @@ VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 #include <algorithm>
 #include <fstream>
 #include <vector>
-
-// Static initialization of the default dispatcher (core functions)
-static int initDispatcher = (VULKAN_HPP_DEFAULT_DISPATCHER.init(), 0);
 
 // ------------------------------------------------------------
 // Helper to load SPIR-V from file
@@ -71,8 +64,7 @@ void VulkanRenderer::run()
 // ------------------------------------------------------------
 void VulkanRenderer::initVulkan()
 {
-    createInstance();
-    setupDebugMessenger();
+    instance = std::make_unique<VulkanInstance>(true);
     createSurface();
     pickPhysicalDevice();
     createLogicalDevice();
@@ -99,6 +91,10 @@ void VulkanRenderer::mainLoop()
 
 void VulkanRenderer::cleanup()
 {
+    // Wait for GPU to finish
+    device.waitIdle();
+
+    // Destroy sync objects
     for (auto &semaphore : imageAvailableSemaphores)
         device.destroySemaphore(semaphore);
     for (auto &semaphore : renderFinishedSemaphores)
@@ -106,98 +102,41 @@ void VulkanRenderer::cleanup()
     for (auto &fence : inFlightFences)
         device.destroyFence(fence);
 
+    // Command buffers and pool
     device.freeCommandBuffers(commandPool, commandBuffers);
     device.destroyCommandPool(commandPool);
 
+    // Framebuffers
     for (auto framebuffer : swapChainFramebuffers)
         device.destroyFramebuffer(framebuffer);
 
+    // Pipeline and layout
     device.destroyPipeline(graphicsPipeline);
     device.destroyPipelineLayout(pipelineLayout);
+
+    // Render pass
     device.destroyRenderPass(renderPass);
 
+    // Image views
     for (auto imageView : swapChainImageViews)
         device.destroyImageView(imageView);
 
+    // Swapchain
     device.destroySwapchainKHR(swapChain);
+
+    // Additional swapchain cleanup (if needed)
     cleanupSwapChain();
+
+    // Destroy logical device
     device.destroy();
 
-    if (enableValidationLayers)
-    {
-        instance.destroyDebugUtilsMessengerEXT(debugMessenger, nullptr, VULKAN_HPP_DEFAULT_DISPATCHER);
-    }
+    // Destroy surface — this is still valid (owned by VulkanRenderer)
+    instance->get().destroySurfaceKHR(surface);
 
-    instance.destroySurfaceKHR(surface);
-    instance.destroy();
-}
-
-// ------------------------------------------------------------
-// Instance Creation
-// ------------------------------------------------------------
-void VulkanRenderer::createInstance()
-{
-    vk::ApplicationInfo appInfo("Vulkan Cube", VK_MAKE_VERSION(1, 0, 0), "No Engine", VK_MAKE_VERSION(1, 0, 0), VK_API_VERSION_1_3);
-
-    uint32_t glfwExtensionCount = 0;
-    const char **glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
-
-    std::vector<const char *> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
-
-    if (enableValidationLayers)
-    {
-        extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-    }
-
-    vk::InstanceCreateInfo createInfo({}, &appInfo, 0, nullptr, extensions.size(), extensions.data());
-
-    // Create instance first (no layers yet)
-    instance = vk::createInstance(createInfo);
-    VULKAN_HPP_DEFAULT_DISPATCHER.init(instance);
-
-    // Now check for validation layers (safe, dispatcher is initialized)
-    if (enableValidationLayers)
-    {
-        uint32_t layerCount = 0;
-        vkEnumerateInstanceLayerProperties(&layerCount, nullptr); // Raw C function
-
-        std::vector<VkLayerProperties> availableLayers(layerCount);
-        vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data()); // Raw C function
-
-        for (const char *layerName : validationLayers)
-        {
-            bool found = false;
-            for (const auto &properties : availableLayers)
-            {
-                if (strcmp(layerName, properties.layerName) == 0)
-                {
-                    found = true;
-                    break;
-                }
-            }
-            if (!found)
-            {
-                throw std::runtime_error("validation layer not available: " + std::string(layerName));
-            }
-        }
-    }
-}
-
-// ------------------------------------------------------------
-// Debug Messenger
-// ------------------------------------------------------------
-void VulkanRenderer::setupDebugMessenger()
-{
-    if (!enableValidationLayers)
-        return;
-
-    vk::DebugUtilsMessengerCreateInfoEXT createInfo(
-        {},
-        vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning | vk::DebugUtilsMessageSeverityFlagBitsEXT::eError,
-        vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral | vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation | vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance,
-        debugCallback);
-
-    debugMessenger = instance.createDebugUtilsMessengerEXT(createInfo, nullptr, VULKAN_HPP_DEFAULT_DISPATCHER);
+    // VulkanInstance destructor will destroy:
+    // - debug messenger (if enabled)
+    // - instance
+    // So we don't need to do it here
 }
 
 // ------------------------------------------------------------
@@ -206,7 +145,7 @@ void VulkanRenderer::setupDebugMessenger()
 void VulkanRenderer::createSurface()
 {
     VkSurfaceKHR rawSurface = VK_NULL_HANDLE;
-    VkResult result = glfwCreateWindowSurface(static_cast<VkInstance>(instance), window, nullptr, &rawSurface);
+    VkResult result = glfwCreateWindowSurface(static_cast<VkInstance>(instance->get()), window, nullptr, &rawSurface);
     if (result != VK_SUCCESS)
     {
         throw std::runtime_error("failed to create window surface!");
@@ -219,7 +158,7 @@ void VulkanRenderer::createSurface()
 // ------------------------------------------------------------
 void VulkanRenderer::pickPhysicalDevice()
 {
-    auto devices = instance.enumeratePhysicalDevices();
+    auto devices = instance->get().enumeratePhysicalDevices();
     if (devices.empty())
     {
         throw std::runtime_error("failed to find GPUs with Vulkan support!");
@@ -291,21 +230,20 @@ void VulkanRenderer::createLogicalDevice()
 
     vk::PhysicalDeviceFeatures deviceFeatures{};
 
-    vk::DeviceCreateInfo createInfo(
-        vk::DeviceCreateFlags(),                                                     // flags
-        static_cast<uint32_t>(queueCreateInfos.size()),                              // queueCreateInfoCount
-        queueCreateInfos.data(),                                                     // pQueueCreateInfos
-        enableValidationLayers ? static_cast<uint32_t>(validationLayers.size()) : 0, // layerCount
-        enableValidationLayers ? validationLayers.data() : nullptr,                  // ppEnabledLayerNames
-        static_cast<uint32_t>(deviceExtensions.size()),                              // enabledExtensionCount
-        deviceExtensions.data(),                                                     // ppEnabledExtensionNames
-        &deviceFeatures                                                              // pEnabledFeatures
-    );
+    vk::DeviceCreateInfo createInfo;
+    createInfo.flags = vk::DeviceCreateFlags();
+    createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
+    createInfo.pQueueCreateInfos = queueCreateInfos.data();
+    createInfo.enabledLayerCount = 0; // We'll set this below if validation is enabled
+    createInfo.ppEnabledLayerNames = nullptr;
+    createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
+    createInfo.ppEnabledExtensionNames = deviceExtensions.data();
+    createInfo.pEnabledFeatures = &deviceFeatures;
 
     device = physicalDevice.createDevice(createInfo);
 
     // Initialize device-level functions
-    VULKAN_HPP_DEFAULT_DISPATCHER.init(device);
+    // VULKAN_HPP_DEFAULT_DISPATCHER.init(device);
 
     graphicsQueue = device.getQueue(indices.graphicsFamily.value(), 0);
     presentQueue = device.getQueue(indices.presentFamily.value(), 0);
