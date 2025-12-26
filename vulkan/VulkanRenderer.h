@@ -10,7 +10,8 @@
 #include "VulkanRenderPass.h"
 #include "VulkanGraphicsPipeline.h"
 #include "VulkanShader.h"
-#include "VulkanCommand.h" // <-- Added
+#include "VulkanCommand.h"
+#include "VulkanSync.h"
 
 class VulkanRenderer
 {
@@ -25,7 +26,6 @@ private:
     void cleanup();
 
     void createSurface();
-    void createSyncObjects(); // Still here (will be refactored next if desired)
     void drawFrame();
     void recreateSwapChain();
 
@@ -38,16 +38,12 @@ private:
     std::unique_ptr<VulkanRenderPass> vulkanRenderPass;
     std::unique_ptr<VulkanGraphicsPipeline> vulkanGraphicsPipeline;
     std::unique_ptr<VulkanCommand> vulkanCommand;
+    std::unique_ptr<VulkanSync> vulkanSync;
 
-    // Surface (owned by renderer, passed to swapchain)
+    // Surface
     vk::SurfaceKHR surface;
-
-    // Synchronization (still in renderer for now)
-    std::vector<vk::Semaphore> imageAvailableSemaphores;
-    std::vector<vk::Semaphore> renderFinishedSemaphores;
-    std::vector<vk::Fence> inFlightFences;
 
     // Frame tracking
     size_t currentFrame = 0;
-    const int MAX_FRAMES_IN_FLIGHT = 3; // Triple buffering safety
+    const int MAX_FRAMES_IN_FLIGHT = 3;
 };

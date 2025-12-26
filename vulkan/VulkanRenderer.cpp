@@ -53,10 +53,9 @@ void VulkanRenderer::initVulkan()
         *vulkanRenderPass,
         *triangleShader);
 
-    // Create command buffers (one per frame in flight)
     vulkanCommand = std::make_unique<VulkanCommand>(*vulkanDevice, MAX_FRAMES_IN_FLIGHT);
 
-    createSyncObjects();
+    vulkanSync = std::make_unique<VulkanSync>(*vulkanDevice, MAX_FRAMES_IN_FLIGHT);
 }
 
 void VulkanRenderer::mainLoop()
@@ -77,21 +76,8 @@ void VulkanRenderer::cleanup()
 
     vulkanDevice->getLogicalDevice().waitIdle();
 
-    // Manual cleanup for sync objects (still in renderer)
-    for (auto &semaphore : imageAvailableSemaphores)
-    {
-        vulkanDevice->getLogicalDevice().destroySemaphore(semaphore);
-    }
-    for (auto &semaphore : renderFinishedSemaphores)
-    {
-        vulkanDevice->getLogicalDevice().destroySemaphore(semaphore);
-    }
-    for (auto &fence : inFlightFences)
-    {
-        vulkanDevice->getLogicalDevice().destroyFence(fence);
-    }
-
-    // Cleanup handled by destructors
+    // Everything is now cleaned up by RAII destructors
+    vulkanSync.reset();
     vulkanCommand.reset();
     vulkanGraphicsPipeline.reset();
     vulkanRenderPass.reset();
@@ -127,37 +113,17 @@ void VulkanRenderer::createSurface()
 }
 
 // ------------------------------------------------------------
-// Sync Objects
-// ------------------------------------------------------------
-void VulkanRenderer::createSyncObjects()
-{
-    imageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
-    renderFinishedSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
-    inFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
-
-    vk::SemaphoreCreateInfo semaphoreInfo;
-    vk::FenceCreateInfo fenceInfo(vk::FenceCreateFlagBits::eSignaled);
-
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
-    {
-        imageAvailableSemaphores[i] = vulkanDevice->getLogicalDevice().createSemaphore(semaphoreInfo);
-        renderFinishedSemaphores[i] = vulkanDevice->getLogicalDevice().createSemaphore(semaphoreInfo);
-        inFlightFences[i] = vulkanDevice->getLogicalDevice().createFence(fenceInfo);
-    }
-}
-
-// ------------------------------------------------------------
 // Draw Frame
 // ------------------------------------------------------------
 void VulkanRenderer::drawFrame()
 {
-    (void)vulkanDevice->getLogicalDevice().waitForFences(1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
+    vulkanDevice->getLogicalDevice().waitForFences(1, &vulkanSync->getInFlightFence(currentFrame), VK_TRUE, UINT64_MAX);
 
     uint32_t imageIndex;
     auto result = vulkanDevice->getLogicalDevice().acquireNextImageKHR(
         vulkanSwapchain->getSwapchain(),
         UINT64_MAX,
-        imageAvailableSemaphores[currentFrame],
+        vulkanSync->getImageAvailableSemaphore(currentFrame),
         nullptr,
         &imageIndex);
 
@@ -171,7 +137,7 @@ void VulkanRenderer::drawFrame()
         throw std::runtime_error("failed to acquire swap chain image!");
     }
 
-    (void)vulkanDevice->getLogicalDevice().resetFences(1, &inFlightFences[currentFrame]);
+    vulkanDevice->getLogicalDevice().resetFences(1, &vulkanSync->getInFlightFence(currentFrame));
 
     vk::CommandBuffer cmd = vulkanCommand->getBuffer(currentFrame);
 
@@ -195,7 +161,6 @@ void VulkanRenderer::drawFrame()
 
     cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, vulkanGraphicsPipeline->get());
 
-    // Set dynamic viewport and scissor
     vk::Viewport viewport(
         0.0f, 0.0f,
         static_cast<float>(vulkanSwapchain->getExtent().width),
@@ -212,7 +177,7 @@ void VulkanRenderer::drawFrame()
     cmd.end();
 
     vk::SubmitInfo submitInfo;
-    vk::Semaphore waitSemaphores[] = {imageAvailableSemaphores[currentFrame]};
+    vk::Semaphore waitSemaphores[] = {vulkanSync->getImageAvailableSemaphore(currentFrame)};
     vk::PipelineStageFlags waitStages[] = {vk::PipelineStageFlagBits::eColorAttachmentOutput};
     submitInfo.waitSemaphoreCount = 1;
     submitInfo.pWaitSemaphores = waitSemaphores;
@@ -220,11 +185,11 @@ void VulkanRenderer::drawFrame()
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &cmd;
 
-    vk::Semaphore signalSemaphores[] = {renderFinishedSemaphores[currentFrame]};
+    vk::Semaphore signalSemaphores[] = {vulkanSync->getRenderFinishedSemaphore(currentFrame)};
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = signalSemaphores;
 
-    vulkanDevice->getGraphicsQueue().submit(submitInfo, inFlightFences[currentFrame]);
+    vulkanDevice->getGraphicsQueue().submit(submitInfo, vulkanSync->getInFlightFence(currentFrame));
 
     vk::PresentInfoKHR presentInfo;
     presentInfo.waitSemaphoreCount = 1;
