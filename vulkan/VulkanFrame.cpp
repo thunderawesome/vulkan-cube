@@ -25,10 +25,9 @@ VulkanFrame::VulkanFrame(const VulkanDevice &device,
 {
 }
 
-void VulkanFrame::draw(uint32_t &currentFrame)
+FrameResult VulkanFrame::draw(uint32_t &currentFrame)
 {
-    // Wait for previous frame
-    (void)deviceRef.getLogicalDevice().waitForFences(
+    deviceRef.getLogicalDevice().waitForFences(
         1, &syncRef.getInFlightFence(currentFrame), VK_TRUE, UINT64_MAX);
 
     uint32_t imageIndex;
@@ -41,16 +40,15 @@ void VulkanFrame::draw(uint32_t &currentFrame)
 
     if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR)
     {
-        // Caller will handle recreation
-        currentFrame = (currentFrame + 1) % maxFramesInFlight;
-        return;
+        return FrameResult::SwapchainOutOfDate;
     }
+
     if (result != vk::Result::eSuccess)
     {
         throw std::runtime_error("failed to acquire swap chain image!");
     }
 
-    (void)deviceRef.getLogicalDevice().resetFences(1, &syncRef.getInFlightFence(currentFrame));
+    deviceRef.getLogicalDevice().resetFences(1, &syncRef.getInFlightFence(currentFrame));
 
     vk::CommandBuffer cmd = commandRef.getBuffer(currentFrame);
     cmd.reset();
@@ -115,7 +113,7 @@ void VulkanFrame::draw(uint32_t &currentFrame)
 
     if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR)
     {
-        // Caller will handle recreation
+        return FrameResult::SwapchainOutOfDate;
     }
     else if (result != vk::Result::eSuccess)
     {
@@ -123,4 +121,6 @@ void VulkanFrame::draw(uint32_t &currentFrame)
     }
 
     currentFrame = (currentFrame + 1) % maxFramesInFlight;
+
+    return FrameResult::Success;
 }

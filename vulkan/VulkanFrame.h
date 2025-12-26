@@ -9,6 +9,12 @@ class VulkanGraphicsPipeline;
 class VulkanCommand;
 class VulkanSync;
 
+enum class FrameResult
+{
+    Success,
+    SwapchainOutOfDate
+};
+
 class VulkanFrame
 {
 public:
@@ -20,7 +26,7 @@ public:
                 VulkanSync &sync,
                 uint32_t maxFramesInFlight);
 
-    void draw(uint32_t &currentFrame);
+    FrameResult draw(uint32_t &currentFrame);
 
 private:
     const VulkanDevice &deviceRef;

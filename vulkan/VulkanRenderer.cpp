@@ -49,7 +49,9 @@ void VulkanRenderer::initVulkan()
         *triangleShader);
 
     vulkanCommand = std::make_unique<VulkanCommand>(*vulkanDevice, MAX_FRAMES_IN_FLIGHT);
-    vulkanSync = std::make_unique<VulkanSync>(*vulkanDevice, MAX_FRAMES_IN_FLIGHT);
+    vulkanSync = std::make_unique<VulkanSync>(
+        *vulkanDevice,
+        vulkanSwapchain->getFramebuffers().size());
 
     vulkanFrame = std::make_unique<VulkanFrame>(
         *vulkanDevice,
@@ -66,7 +68,13 @@ void VulkanRenderer::mainLoop()
     while (!glfwWindowShouldClose(window))
     {
         glfwPollEvents();
-        vulkanFrame->draw(currentFrame);
+
+        auto result = vulkanFrame->draw(currentFrame);
+
+        if (result == FrameResult::SwapchainOutOfDate)
+        {
+            vulkanSwapchain->recreate(vulkanRenderPass->get());
+        }
     }
 
     vulkanDevice->getLogicalDevice().waitIdle();
