@@ -78,6 +78,7 @@ add_executable(vulkan_cube
     vulkan/VulkanCommand.cpp
     vulkan/VulkanSync.cpp
     vulkan/VulkanSurface.cpp
+    vulkan/VulkanFrame.cpp
 )
 
 target_link_libraries(vulkan_cube PRIVATE

@@ -19,10 +19,9 @@ VulkanSwapchain::~VulkanSwapchain()
     cleanup();
 }
 
-void VulkanSwapchain::recreate(vk::RenderPass renderPass, GLFWwindow *window)
+void VulkanSwapchain::recreate(vk::RenderPass renderPass)
 {
-    this->window = window;
-
+    // Wait for non-zero window size (minimized)
     int width = 0, height = 0;
     glfwGetFramebufferSize(window, &width, &height);
     while (width == 0 || height == 0)
@@ -32,13 +31,13 @@ void VulkanSwapchain::recreate(vk::RenderPass renderPass, GLFWwindow *window)
     }
 
     deviceRef.getLogicalDevice().waitIdle();
+
     cleanup();
 
     createSwapchain();
     createImageViews();
-    createFramebuffers(renderPass); // Now with valid render pass
+    createFramebuffers(renderPass);
 }
-
 void VulkanSwapchain::createSwapchain()
 {
     SwapChainSupportDetails swapChainSupport = querySwapChainSupport(deviceRef.getPhysicalDevice());
