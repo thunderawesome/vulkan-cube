@@ -2,7 +2,6 @@
 
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan.hpp>
-#include <vector>
 #include <memory>
 
 #include "VulkanInstance.h"
@@ -11,6 +10,7 @@
 #include "VulkanRenderPass.h"
 #include "VulkanGraphicsPipeline.h"
 #include "VulkanShader.h"
+#include "VulkanCommand.h" // <-- Added
 
 class VulkanRenderer
 {
@@ -25,10 +25,7 @@ private:
     void cleanup();
 
     void createSurface();
-    void createCommandPool();
-    void createCommandBuffers();
-    void createSyncObjects();
-
+    void createSyncObjects(); // Still here (will be refactored next if desired)
     void drawFrame();
     void recreateSwapChain();
 
@@ -40,15 +37,12 @@ private:
     std::unique_ptr<VulkanSwapchain> vulkanSwapchain;
     std::unique_ptr<VulkanRenderPass> vulkanRenderPass;
     std::unique_ptr<VulkanGraphicsPipeline> vulkanGraphicsPipeline;
+    std::unique_ptr<VulkanCommand> vulkanCommand;
 
     // Surface (owned by renderer, passed to swapchain)
     vk::SurfaceKHR surface;
 
-    // Commands
-    vk::CommandPool commandPool;
-    std::vector<vk::CommandBuffer> commandBuffers;
-
-    // Synchronization
+    // Synchronization (still in renderer for now)
     std::vector<vk::Semaphore> imageAvailableSemaphores;
     std::vector<vk::Semaphore> renderFinishedSemaphores;
     std::vector<vk::Fence> inFlightFences;
