@@ -12,24 +12,6 @@
 #include <fstream>
 
 // ------------------------------------------------------------
-// Helper to load SPIR-V from file
-// ------------------------------------------------------------
-static std::vector<char> readFile(const std::string &filename)
-{
-    std::ifstream file(filename, std::ios::ate | std::ios::binary);
-    if (!file.is_open())
-    {
-        throw std::runtime_error("failed to open file: " + filename);
-    }
-    size_t fileSize = static_cast<size_t>(file.tellg());
-    std::vector<char> buffer(fileSize);
-    file.seekg(0);
-    file.read(buffer.data(), fileSize);
-    file.close();
-    return buffer;
-}
-
-// ------------------------------------------------------------
 // Constructor / Destructor / Run
 // ------------------------------------------------------------
 VulkanRenderer::VulkanRenderer(GLFWwindow *window) : window(window)
@@ -52,17 +34,28 @@ void VulkanRenderer::run()
 // ------------------------------------------------------------
 void VulkanRenderer::initVulkan()
 {
-    vulkanInstance = std::make_unique<VulkanInstance>(true); // validation enabled
+    vulkanInstance = std::make_unique<VulkanInstance>(true);
 
     createSurface();
 
     vulkanDevice = std::make_unique<VulkanDevice>(vulkanInstance->get(), surface);
+
     vulkanSwapchain = std::make_unique<VulkanSwapchain>(*vulkanDevice, surface, window);
+
     vulkanRenderPass = std::make_unique<VulkanRenderPass>(*vulkanDevice, *vulkanSwapchain);
 
     vulkanSwapchain->createFramebuffers(vulkanRenderPass->get());
 
-    createGraphicsPipeline();
+    auto triangleShader = std::make_unique<VulkanShader>(
+        *vulkanDevice,
+        "shaders/triangle.vert.spv",
+        "shaders/triangle.frag.spv");
+
+    vulkanGraphicsPipeline = std::make_unique<VulkanGraphicsPipeline>(
+        *vulkanDevice,
+        *vulkanRenderPass,
+        *triangleShader);
+
     createCommandPool();
     createCommandBuffers();
     createSyncObjects();
@@ -81,9 +74,11 @@ void VulkanRenderer::mainLoop()
 
 void VulkanRenderer::cleanup()
 {
+    if (!vulkanDevice)
+        return;
+
     vulkanDevice->getLogicalDevice().waitIdle();
 
-    // Sync objects
     for (auto &semaphore : imageAvailableSemaphores)
     {
         vulkanDevice->getLogicalDevice().destroySemaphore(semaphore);
@@ -97,35 +92,22 @@ void VulkanRenderer::cleanup()
         vulkanDevice->getLogicalDevice().destroyFence(fence);
     }
 
-    // Command buffers and pool
     if (!commandBuffers.empty())
     {
         vulkanDevice->getLogicalDevice().freeCommandBuffers(commandPool, commandBuffers);
-        commandBuffers.clear();
     }
     vulkanDevice->getLogicalDevice().destroyCommandPool(commandPool);
 
-    // Pipeline
-    vulkanDevice->getLogicalDevice().destroyPipeline(graphicsPipeline);
-    vulkanDevice->getLogicalDevice().destroyPipelineLayout(pipelineLayout);
-
-    // Render pass
-    vulkanDevice->getLogicalDevice().destroyRenderPass(vulkanRenderPass->get());
-
-    // Shader modules
-    vulkanDevice->getLogicalDevice().destroyShaderModule(fragShaderModule);
-    vulkanDevice->getLogicalDevice().destroyShaderModule(vertShaderModule);
-
-    // Swapchain (includes framebuffers and image views)
+    vulkanGraphicsPipeline.reset();
+    vulkanRenderPass.reset();
     vulkanSwapchain.reset();
-
-    // Device
     vulkanDevice.reset();
 
-    // Surface
-    vulkanInstance->get().destroySurfaceKHR(surface);
+    if (surface && vulkanInstance)
+    {
+        vulkanInstance->get().destroySurfaceKHR(surface);
+    }
 
-    // Instance (debug messenger handled in destructor)
     vulkanInstance.reset();
 }
 
@@ -150,65 +132,6 @@ void VulkanRenderer::createSurface()
 }
 
 // ------------------------------------------------------------
-// Graphics Pipeline
-// ------------------------------------------------------------
-void VulkanRenderer::createGraphicsPipeline()
-{
-    auto vertSPV = readFile("shaders/triangle.vert.spv");
-    auto fragSPV = readFile("shaders/triangle.frag.spv");
-
-    vk::ShaderModuleCreateInfo vertModuleInfo({}, vertSPV.size(), reinterpret_cast<const uint32_t *>(vertSPV.data()));
-    vertShaderModule = vulkanDevice->getLogicalDevice().createShaderModule(vertModuleInfo);
-
-    vk::ShaderModuleCreateInfo fragModuleInfo({}, fragSPV.size(), reinterpret_cast<const uint32_t *>(fragSPV.data()));
-    fragShaderModule = vulkanDevice->getLogicalDevice().createShaderModule(fragModuleInfo);
-
-    vk::PipelineShaderStageCreateInfo vertShaderStageInfo({}, vk::ShaderStageFlagBits::eVertex, vertShaderModule, "main");
-    vk::PipelineShaderStageCreateInfo fragShaderStageInfo({}, vk::ShaderStageFlagBits::eFragment, fragShaderModule, "main");
-    vk::PipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
-
-    vk::PipelineVertexInputStateCreateInfo vertexInputInfo;
-
-    vk::PipelineInputAssemblyStateCreateInfo inputAssembly({}, vk::PrimitiveTopology::eTriangleList, false);
-
-    vk::Viewport viewport(
-        0.0f, 0.0f,
-        static_cast<float>(vulkanSwapchain->getExtent().width),
-        static_cast<float>(vulkanSwapchain->getExtent().height),
-        0.0f, 1.0f);
-    vk::Rect2D scissor({0, 0}, vulkanSwapchain->getExtent());
-
-    vk::PipelineViewportStateCreateInfo viewportState({}, 1, &viewport, 1, &scissor);
-
-    vk::PipelineRasterizationStateCreateInfo rasterizer(
-        {}, false, false, vk::PolygonMode::eFill, vk::CullModeFlagBits::eBack, vk::FrontFace::eClockwise,
-        false, 0.0f, 0.0f, 0.0f, 1.0f);
-
-    vk::PipelineMultisampleStateCreateInfo multisampling({}, vk::SampleCountFlagBits::e1, false);
-
-    vk::PipelineColorBlendAttachmentState colorBlendAttachment;
-    colorBlendAttachment.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
-                                          vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
-
-    vk::PipelineColorBlendStateCreateInfo colorBlending({}, false, vk::LogicOp::eCopy, colorBlendAttachment);
-
-    vk::PipelineLayoutCreateInfo pipelineLayoutInfo;
-    pipelineLayout = vulkanDevice->getLogicalDevice().createPipelineLayout(pipelineLayoutInfo);
-
-    vk::GraphicsPipelineCreateInfo pipelineInfo(
-        {}, shaderStages, &vertexInputInfo, &inputAssembly, nullptr,
-        &viewportState, &rasterizer, &multisampling, nullptr, &colorBlending,
-        nullptr, pipelineLayout, vulkanRenderPass->get(), 0);
-
-    auto result = vulkanDevice->getLogicalDevice().createGraphicsPipeline(VK_NULL_HANDLE, pipelineInfo);
-    if (result.result != vk::Result::eSuccess)
-    {
-        throw std::runtime_error("failed to create graphics pipeline!");
-    }
-    graphicsPipeline = result.value;
-}
-
-// ------------------------------------------------------------
 // Command Pool & Buffers
 // ------------------------------------------------------------
 void VulkanRenderer::createCommandPool()
@@ -221,38 +144,10 @@ void VulkanRenderer::createCommandPool()
 
 void VulkanRenderer::createCommandBuffers()
 {
-    commandBuffers.resize(vulkanSwapchain->getFramebuffers().size());
+    commandBuffers.resize(MAX_FRAMES_IN_FLIGHT);
 
-    vk::CommandBufferAllocateInfo allocInfo(
-        commandPool,
-        vk::CommandBufferLevel::ePrimary,
-        static_cast<uint32_t>(commandBuffers.size()));
+    vk::CommandBufferAllocateInfo allocInfo(commandPool, vk::CommandBufferLevel::ePrimary, MAX_FRAMES_IN_FLIGHT);
     commandBuffers = vulkanDevice->getLogicalDevice().allocateCommandBuffers(allocInfo);
-
-    for (size_t i = 0; i < commandBuffers.size(); ++i)
-    {
-        vk::CommandBufferBeginInfo beginInfo;
-        commandBuffers[i].begin(beginInfo);
-
-        vk::ClearValue clearColor;
-        clearColor.color = vk::ClearColorValue(std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f});
-
-        vk::RenderPassBeginInfo renderPassInfo;
-        renderPassInfo.renderPass = vulkanRenderPass->get();
-        renderPassInfo.framebuffer = vulkanSwapchain->getFramebuffers()[i];
-        renderPassInfo.renderArea.offset = vk::Offset2D(0, 0);
-        renderPassInfo.renderArea.extent = vulkanSwapchain->getExtent();
-        renderPassInfo.clearValueCount = 1;
-        renderPassInfo.pClearValues = &clearColor;
-
-        commandBuffers[i].beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
-
-        commandBuffers[i].bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline);
-        commandBuffers[i].draw(3, 1, 0, 0);
-
-        commandBuffers[i].endRenderPass();
-        commandBuffers[i].end();
-    }
 }
 
 // ------------------------------------------------------------
@@ -302,6 +197,40 @@ void VulkanRenderer::drawFrame()
 
     (void)vulkanDevice->getLogicalDevice().resetFences(1, &inFlightFences[currentFrame]);
 
+    vk::CommandBuffer cmd = commandBuffers[currentFrame];
+
+    cmd.reset();
+
+    vk::CommandBufferBeginInfo beginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
+    cmd.begin(beginInfo);
+
+    vk::ClearValue clearColor;
+    clearColor.color = vk::ClearColorValue(std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f});
+
+    vk::RenderPassBeginInfo renderPassInfo;
+    renderPassInfo.renderPass = vulkanRenderPass->get();
+    renderPassInfo.framebuffer = vulkanSwapchain->getFramebuffer(imageIndex);
+    renderPassInfo.renderArea.offset = vk::Offset2D(0, 0); // Explicit constructor
+    renderPassInfo.renderArea.extent = vulkanSwapchain->getExtent();
+    renderPassInfo.clearValueCount = 1;
+    renderPassInfo.pClearValues = &clearColor;
+
+    cmd.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
+
+    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, vulkanGraphicsPipeline->get());
+
+    // Set dynamic viewport and scissor
+    vk::Viewport viewport(0.0f, 0.0f, static_cast<float>(vulkanSwapchain->getExtent().width), static_cast<float>(vulkanSwapchain->getExtent().height), 0.0f, 1.0f);
+    cmd.setViewport(0, 1, &viewport);
+
+    vk::Rect2D scissor({0, 0}, vulkanSwapchain->getExtent());
+    cmd.setScissor(0, 1, &scissor);
+
+    cmd.draw(3, 1, 0, 0);
+
+    cmd.endRenderPass();
+    cmd.end();
+
     vk::SubmitInfo submitInfo;
     vk::Semaphore waitSemaphores[] = {imageAvailableSemaphores[currentFrame]};
     vk::PipelineStageFlags waitStages[] = {vk::PipelineStageFlagBits::eColorAttachmentOutput};
@@ -309,7 +238,7 @@ void VulkanRenderer::drawFrame()
     submitInfo.pWaitSemaphores = waitSemaphores;
     submitInfo.pWaitDstStageMask = waitStages;
     submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &commandBuffers[imageIndex];
+    submitInfo.pCommandBuffers = &cmd;
 
     vk::Semaphore signalSemaphores[] = {renderFinishedSemaphores[currentFrame]};
     submitInfo.signalSemaphoreCount = 1;
@@ -354,14 +283,19 @@ void VulkanRenderer::recreateSwapChain()
 
     vulkanDevice->getLogicalDevice().waitIdle();
 
+    // Recreate swapchain (destroys old framebuffers/image views internally)
     vulkanSwapchain->recreate(vulkanRenderPass->get(), window);
 
-    // Free old command buffers before re-recording
+    // Create new framebuffers with the same render pass
+    vulkanSwapchain->createFramebuffers(vulkanRenderPass->get());
+
+    // Free old command buffers
     if (!commandBuffers.empty())
     {
         vulkanDevice->getLogicalDevice().freeCommandBuffers(commandPool, commandBuffers);
         commandBuffers.clear();
     }
 
+    // Re-allocate and re-record command buffers
     createCommandBuffers();
 }
