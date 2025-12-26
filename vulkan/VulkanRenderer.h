@@ -12,6 +12,7 @@
 #include "VulkanShader.h"
 #include "VulkanCommand.h"
 #include "VulkanSync.h"
+#include "VulkanSurface.h" // <-- Added
 
 class VulkanRenderer
 {
@@ -25,7 +26,6 @@ private:
     void mainLoop();
     void cleanup();
 
-    void createSurface();
     void drawFrame();
     void recreateSwapChain();
 
@@ -39,9 +39,7 @@ private:
     std::unique_ptr<VulkanGraphicsPipeline> vulkanGraphicsPipeline;
     std::unique_ptr<VulkanCommand> vulkanCommand;
     std::unique_ptr<VulkanSync> vulkanSync;
-
-    // Surface
-    vk::SurfaceKHR surface;
+    std::unique_ptr<VulkanSurface> vulkanSurface;
 
     // Frame tracking
     size_t currentFrame = 0;
