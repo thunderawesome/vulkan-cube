@@ -32,15 +32,10 @@ void VulkanRenderer::run()
 void VulkanRenderer::initVulkan()
 {
     vulkanInstance = std::make_unique<VulkanInstance>(true);
-
-    createSurface();
-
-    vulkanDevice = std::make_unique<VulkanDevice>(vulkanInstance->get(), surface);
-
-    vulkanSwapchain = std::make_unique<VulkanSwapchain>(*vulkanDevice, surface, window);
-
+    vulkanSurface = std::make_unique<VulkanSurface>(*vulkanInstance, window);
+    vulkanDevice = std::make_unique<VulkanDevice>(vulkanInstance->get(), vulkanSurface->get());
+    vulkanSwapchain = std::make_unique<VulkanSwapchain>(*vulkanDevice, vulkanSurface->get(), window);
     vulkanRenderPass = std::make_unique<VulkanRenderPass>(*vulkanDevice, *vulkanSwapchain);
-
     vulkanSwapchain->createFramebuffers(vulkanRenderPass->get());
 
     auto triangleShader = std::make_unique<VulkanShader>(
@@ -54,7 +49,6 @@ void VulkanRenderer::initVulkan()
         *triangleShader);
 
     vulkanCommand = std::make_unique<VulkanCommand>(*vulkanDevice, MAX_FRAMES_IN_FLIGHT);
-
     vulkanSync = std::make_unique<VulkanSync>(*vulkanDevice, MAX_FRAMES_IN_FLIGHT);
 }
 
@@ -76,40 +70,15 @@ void VulkanRenderer::cleanup()
 
     vulkanDevice->getLogicalDevice().waitIdle();
 
-    // Everything is now cleaned up by RAII destructors
+    // All resources cleaned up by RAII destructors
     vulkanSync.reset();
     vulkanCommand.reset();
     vulkanGraphicsPipeline.reset();
     vulkanRenderPass.reset();
     vulkanSwapchain.reset();
+    vulkanSurface.reset();
     vulkanDevice.reset();
-
-    if (surface && vulkanInstance)
-    {
-        vulkanInstance->get().destroySurfaceKHR(surface);
-    }
-
     vulkanInstance.reset();
-}
-
-// ------------------------------------------------------------
-// Surface Creation
-// ------------------------------------------------------------
-void VulkanRenderer::createSurface()
-{
-    VkSurfaceKHR rawSurface = VK_NULL_HANDLE;
-    VkResult result = glfwCreateWindowSurface(
-        static_cast<VkInstance>(vulkanInstance->get()),
-        window,
-        nullptr,
-        &rawSurface);
-
-    if (result != VK_SUCCESS)
-    {
-        throw std::runtime_error("failed to create window surface!");
-    }
-
-    surface = vk::SurfaceKHR(rawSurface);
 }
 
 // ------------------------------------------------------------
@@ -117,7 +86,7 @@ void VulkanRenderer::createSurface()
 // ------------------------------------------------------------
 void VulkanRenderer::drawFrame()
 {
-    vulkanDevice->getLogicalDevice().waitForFences(1, &vulkanSync->getInFlightFence(currentFrame), VK_TRUE, UINT64_MAX);
+    (void)vulkanDevice->getLogicalDevice().waitForFences(1, &vulkanSync->getInFlightFence(currentFrame), VK_TRUE, UINT64_MAX);
 
     uint32_t imageIndex;
     auto result = vulkanDevice->getLogicalDevice().acquireNextImageKHR(
@@ -137,7 +106,7 @@ void VulkanRenderer::drawFrame()
         throw std::runtime_error("failed to acquire swap chain image!");
     }
 
-    vulkanDevice->getLogicalDevice().resetFences(1, &vulkanSync->getInFlightFence(currentFrame));
+    (void)vulkanDevice->getLogicalDevice().resetFences(1, &vulkanSync->getInFlightFence(currentFrame));
 
     vk::CommandBuffer cmd = vulkanCommand->getBuffer(currentFrame);
 
