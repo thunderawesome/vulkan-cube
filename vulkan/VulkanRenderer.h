@@ -12,7 +12,8 @@
 #include "VulkanShader.h"
 #include "VulkanCommand.h"
 #include "VulkanSync.h"
-#include "VulkanSurface.h" // <-- Added
+#include "VulkanSurface.h"
+#include "VulkanFrame.h"
 
 class VulkanRenderer
 {
@@ -26,9 +27,6 @@ private:
     void mainLoop();
     void cleanup();
 
-    void drawFrame();
-    void recreateSwapChain();
-
     GLFWwindow *window;
 
     // Core components
@@ -40,8 +38,9 @@ private:
     std::unique_ptr<VulkanCommand> vulkanCommand;
     std::unique_ptr<VulkanSync> vulkanSync;
     std::unique_ptr<VulkanSurface> vulkanSurface;
+    std::unique_ptr<VulkanFrame> vulkanFrame;
 
     // Frame tracking
-    size_t currentFrame = 0;
-    const int MAX_FRAMES_IN_FLIGHT = 3;
+    uint32_t currentFrame = 0;
+    const uint32_t MAX_FRAMES_IN_FLIGHT = 3;
 };

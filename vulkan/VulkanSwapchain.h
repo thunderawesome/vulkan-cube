@@ -3,7 +3,7 @@
 #include <vulkan/vulkan.hpp>
 #include <vector>
 
-class VulkanDevice; // Forward declaration
+class VulkanDevice;
 
 struct SwapChainSupportDetails
 {
@@ -25,8 +25,8 @@ public:
     const std::vector<vk::Framebuffer> &getFramebuffers() const { return swapChainFramebuffers; }
     vk::Framebuffer getFramebuffer(uint32_t index) const { return swapChainFramebuffers[index]; }
 
-    void recreate(vk::RenderPass renderPass, GLFWwindow *window);
-    void createFramebuffers(vk::RenderPass renderPass);
+    void recreate(vk::RenderPass renderPass);           // Self-contained recreation
+    void createFramebuffers(vk::RenderPass renderPass); // <-- Now public
 
 private:
     void createSwapchain();
@@ -40,7 +40,7 @@ private:
     vk::PresentModeKHR chooseSwapPresentMode(const std::vector<vk::PresentModeKHR> &availablePresentModes);
     vk::Extent2D chooseSwapExtent(const vk::SurfaceCapabilitiesKHR &capabilities, GLFWwindow *window);
 
-    const VulkanDevice &deviceRef; // Reference to VulkanDevice
+    const VulkanDevice &deviceRef;
     vk::SurfaceKHR surface;
     GLFWwindow *window;
 
