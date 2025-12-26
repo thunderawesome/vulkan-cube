@@ -28,7 +28,7 @@ namespace
         return buffer;
     }
 
-} // anonymous namespace
+}
 
 VulkanShader::VulkanShader(const VulkanDevice &device,
                            const std::string &vertPath,
