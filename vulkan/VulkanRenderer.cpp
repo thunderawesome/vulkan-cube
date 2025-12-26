@@ -2,9 +2,6 @@
 #include <GLFW/glfw3.h>
 
 #include "VulkanRenderer.h"
-#include "VulkanInstance.h"
-#include "VulkanDevice.h"
-#include "VulkanSwapchain.h"
 
 #include <iostream>
 #include <vector>
@@ -56,8 +53,9 @@ void VulkanRenderer::initVulkan()
         *vulkanRenderPass,
         *triangleShader);
 
-    createCommandPool();
-    createCommandBuffers();
+    // Create command buffers (one per frame in flight)
+    vulkanCommand = std::make_unique<VulkanCommand>(*vulkanDevice, MAX_FRAMES_IN_FLIGHT);
+
     createSyncObjects();
 }
 
@@ -79,6 +77,7 @@ void VulkanRenderer::cleanup()
 
     vulkanDevice->getLogicalDevice().waitIdle();
 
+    // Manual cleanup for sync objects (still in renderer)
     for (auto &semaphore : imageAvailableSemaphores)
     {
         vulkanDevice->getLogicalDevice().destroySemaphore(semaphore);
@@ -92,12 +91,8 @@ void VulkanRenderer::cleanup()
         vulkanDevice->getLogicalDevice().destroyFence(fence);
     }
 
-    if (!commandBuffers.empty())
-    {
-        vulkanDevice->getLogicalDevice().freeCommandBuffers(commandPool, commandBuffers);
-    }
-    vulkanDevice->getLogicalDevice().destroyCommandPool(commandPool);
-
+    // Cleanup handled by destructors
+    vulkanCommand.reset();
     vulkanGraphicsPipeline.reset();
     vulkanRenderPass.reset();
     vulkanSwapchain.reset();
@@ -129,25 +124,6 @@ void VulkanRenderer::createSurface()
     }
 
     surface = vk::SurfaceKHR(rawSurface);
-}
-
-// ------------------------------------------------------------
-// Command Pool & Buffers
-// ------------------------------------------------------------
-void VulkanRenderer::createCommandPool()
-{
-    uint32_t graphicsFamily = vulkanDevice->getGraphicsQueueFamily();
-
-    vk::CommandPoolCreateInfo poolInfo(vk::CommandPoolCreateFlagBits::eResetCommandBuffer, graphicsFamily);
-    commandPool = vulkanDevice->getLogicalDevice().createCommandPool(poolInfo);
-}
-
-void VulkanRenderer::createCommandBuffers()
-{
-    commandBuffers.resize(MAX_FRAMES_IN_FLIGHT);
-
-    vk::CommandBufferAllocateInfo allocInfo(commandPool, vk::CommandBufferLevel::ePrimary, MAX_FRAMES_IN_FLIGHT);
-    commandBuffers = vulkanDevice->getLogicalDevice().allocateCommandBuffers(allocInfo);
 }
 
 // ------------------------------------------------------------
@@ -197,7 +173,7 @@ void VulkanRenderer::drawFrame()
 
     (void)vulkanDevice->getLogicalDevice().resetFences(1, &inFlightFences[currentFrame]);
 
-    vk::CommandBuffer cmd = commandBuffers[currentFrame];
+    vk::CommandBuffer cmd = vulkanCommand->getBuffer(currentFrame);
 
     cmd.reset();
 
@@ -210,7 +186,7 @@ void VulkanRenderer::drawFrame()
     vk::RenderPassBeginInfo renderPassInfo;
     renderPassInfo.renderPass = vulkanRenderPass->get();
     renderPassInfo.framebuffer = vulkanSwapchain->getFramebuffer(imageIndex);
-    renderPassInfo.renderArea.offset = vk::Offset2D(0, 0); // Explicit constructor
+    renderPassInfo.renderArea.offset = vk::Offset2D(0, 0);
     renderPassInfo.renderArea.extent = vulkanSwapchain->getExtent();
     renderPassInfo.clearValueCount = 1;
     renderPassInfo.pClearValues = &clearColor;
@@ -220,7 +196,11 @@ void VulkanRenderer::drawFrame()
     cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, vulkanGraphicsPipeline->get());
 
     // Set dynamic viewport and scissor
-    vk::Viewport viewport(0.0f, 0.0f, static_cast<float>(vulkanSwapchain->getExtent().width), static_cast<float>(vulkanSwapchain->getExtent().height), 0.0f, 1.0f);
+    vk::Viewport viewport(
+        0.0f, 0.0f,
+        static_cast<float>(vulkanSwapchain->getExtent().width),
+        static_cast<float>(vulkanSwapchain->getExtent().height),
+        0.0f, 1.0f);
     cmd.setViewport(0, 1, &viewport);
 
     vk::Rect2D scissor({0, 0}, vulkanSwapchain->getExtent());
@@ -283,19 +263,6 @@ void VulkanRenderer::recreateSwapChain()
 
     vulkanDevice->getLogicalDevice().waitIdle();
 
-    // Recreate swapchain (destroys old framebuffers/image views internally)
     vulkanSwapchain->recreate(vulkanRenderPass->get(), window);
-
-    // Create new framebuffers with the same render pass
     vulkanSwapchain->createFramebuffers(vulkanRenderPass->get());
-
-    // Free old command buffers
-    if (!commandBuffers.empty())
-    {
-        vulkanDevice->getLogicalDevice().freeCommandBuffers(commandPool, commandBuffers);
-        commandBuffers.clear();
-    }
-
-    // Re-allocate and re-record command buffers
-    createCommandBuffers();
 }
