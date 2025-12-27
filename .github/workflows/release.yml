@@ -21,7 +21,7 @@ jobs:
             - name: Install Vulkan SDK (Windows)
               if: matrix.os == 'windows-latest'
               run: |
-                  Invoke-WebRequest -Uri "https://sdk.lunarg.com/sdk/download/latest/windows/vulkan-sdk.exe" -OutFile VulkanSDK.exe
+                  Invoke-WebRequest -Uri "https://sdk.lunarg.com/sdk/download/1.3.290.0/windows/VulkanSDK-1.3.290.0-Installer.exe" -OutFile VulkanSDK.exe
                   Start-Process -FilePath VulkanSDK.exe -ArgumentList "/S" -Wait
                   echo "VULKAN_SDK=C:\VulkanSDK\1.3.290.0" >> $env:GITHUB_ENV
                   echo "C:\VulkanSDK\1.3.290.0\Bin" >> $env:GITHUB_PATH
@@ -37,12 +37,20 @@ jobs:
             - name: Install Vulkan SDK (macOS)
               if: matrix.os == 'macos-latest'
               run: |
-                  brew install cmake ninja
-                  curl -O https://sdk.lunarg.com/sdk/download/latest/mac/vulkan-sdk.dmg
-                  hdiutil attach vulkan-sdk.dmg
-                  sudo /Volumes/vulkansdk-macos-*/InstallVulkan.app/Contents/MacOS/InstallVulkan --root ~/VulkanSDK --accept-licenses --default-answer --confirm-command install
-                  echo "VULKAN_SDK=$HOME/VulkanSDK/macOS" >> $GITHUB_ENV
-                  echo "$HOME/VulkanSDK/macOS/bin" >> $GITHUB_PATH
+                  brew install cmake ninja molten-vk vulkan-headers vulkan-loader
+                  echo "VULKAN_SDK=$(brew --prefix molten-vk)" >> $GITHUB_ENV
+                  echo "$(brew --prefix molten-vk)/bin" >> $GITHUB_PATH
+
+                  # Install glslc from vulkan-tools
+                  brew install glslang
+                  echo "$(brew --prefix glslang)/bin" >> $GITHUB_PATH
+
+            - name: Verify Vulkan SDK (all platforms)
+              shell: bash
+              run: |
+                  echo "VULKAN_SDK: $VULKAN_SDK"
+                  which glslc || echo "glslc not found in PATH"
+                  glslc --version || echo "glslc not available"
 
             - name: Setup MSVC (Windows only)
               if: matrix.os == 'windows-latest'
@@ -144,7 +152,7 @@ jobs:
                       ### macOS
                       1. Download `vulkan-cube-macos.zip`
                       2. Extract and run `./vulkan_cube`
-                      3. Requires MoltenVK (included in Vulkan SDK)
+                      3. Requires MoltenVK (included via Homebrew: `brew install molten-vk`)
 
                       **Note**: Compiled SPIR-V shaders are included in the `shaders/` directory.
                   generate_release_notes: true
