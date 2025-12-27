@@ -2,14 +2,15 @@
 #include <vulkan/vulkan.hpp>
 #include <vector>
 #include <memory>
+#include <glm/glm.hpp>
 
 class VulkanDevice;
 class VulkanSwapchain;
 class VulkanRenderPass;
-class VulkanGraphicsPipeline;
 class VulkanCommand;
 class VulkanSync;
 class Mesh;
+class Material;
 struct GameObject;
 
 enum class FrameResult
@@ -24,7 +25,6 @@ public:
     VulkanFrame(const VulkanDevice &device,
                 const VulkanSwapchain &swapchain,
                 const VulkanRenderPass &renderPass,
-                const VulkanGraphicsPipeline &pipeline,
                 VulkanCommand &command,
                 VulkanSync &sync,
                 uint32_t maxFramesInFlight);
@@ -42,7 +42,6 @@ private:
     const VulkanDevice &deviceRef;
     const VulkanSwapchain &swapchainRef;
     const VulkanRenderPass &renderPassRef;
-    const VulkanGraphicsPipeline &pipelineRef;
     VulkanCommand &commandRef;
     VulkanSync &syncRef;
 
@@ -50,4 +49,9 @@ private:
 
     const uint32_t maxFramesInFlight;
     float targetAspect = 1.0f;
+
+    // Helper to batch objects by material for efficient rendering
+    void renderObjects(vk::CommandBuffer cmd,
+                       const glm::mat4 &view,
+                       const glm::mat4 &proj);
 };

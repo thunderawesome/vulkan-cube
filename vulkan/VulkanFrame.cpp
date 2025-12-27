@@ -2,27 +2,26 @@
 #include "VulkanDevice.h"
 #include "VulkanSwapchain.h"
 #include "VulkanRenderPass.h"
-#include "VulkanGraphicsPipeline.h"
 #include "VulkanCommand.h"
 #include "VulkanSync.h"
 #include "src/Mesh.h"
 #include "src/GameObject.h"
+#include "src/Material.h"
 
 #include <array>
+#include <unordered_map>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
 VulkanFrame::VulkanFrame(const VulkanDevice &device,
                          const VulkanSwapchain &swapchain,
                          const VulkanRenderPass &renderPass,
-                         const VulkanGraphicsPipeline &pipeline,
                          VulkanCommand &command,
                          VulkanSync &sync,
                          uint32_t maxFramesInFlight)
     : deviceRef(device),
       swapchainRef(swapchain),
       renderPassRef(renderPass),
-      pipelineRef(pipeline),
       commandRef(command),
       syncRef(sync),
       maxFramesInFlight(maxFramesInFlight)
@@ -48,6 +47,46 @@ void VulkanFrame::updateTargetAspect()
     auto ext = swapchainRef.getExtent();
     if (ext.height > 0)
         targetAspect = static_cast<float>(ext.width) / static_cast<float>(ext.height);
+}
+
+void VulkanFrame::renderObjects(vk::CommandBuffer cmd,
+                                const glm::mat4 &view,
+                                const glm::mat4 &proj)
+{
+    // Batch objects by material to minimize pipeline switches
+    std::unordered_map<Material *, std::vector<GameObject *>> batchedObjects;
+
+    for (GameObject *obj : gameObjects)
+    {
+        if (obj && obj->enabled && obj->mesh && obj->material)
+        {
+            batchedObjects[obj->material].push_back(obj);
+        }
+    }
+
+    // Render each material batch (C++11 compatible iteration)
+    for (auto it = batchedObjects.begin(); it != batchedObjects.end(); ++it)
+    {
+        Material *material = it->first;
+        std::vector<GameObject *> &objects = it->second;
+
+        // Bind pipeline once per material
+        cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, material->getPipeline());
+
+        // Render all objects using this material
+        for (GameObject *obj : objects)
+        {
+            glm::mat4 model = obj->transform.getMatrix();
+            glm::mat4 mvp = proj * view * model;
+
+            cmd.pushConstants(material->getLayout(),
+                              vk::ShaderStageFlagBits::eVertex,
+                              0, sizeof(glm::mat4), &mvp);
+
+            obj->mesh->bind(cmd);
+            obj->mesh->draw(cmd);
+        }
+    }
 }
 
 FrameResult VulkanFrame::draw(uint32_t &currentFrame)
@@ -104,25 +143,20 @@ FrameResult VulkanFrame::draw(uint32_t &currentFrame)
 
     cmd.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
 
-    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, pipelineRef.get());
-
-    // Get current extent
+    // Setup viewport and scissor
     auto extent = swapchainRef.getExtent();
     float curW = static_cast<float>(extent.width);
     float curH = static_cast<float>(extent.height);
     float curAspect = (curH > 0.0f) ? (curW / curH) : 1.0f;
 
-    // Calculate viewport with letterboxing
     float vpW = curW;
     float vpH = curH;
     if (curAspect > targetAspect)
     {
-        // window is wider than target -> limit width
         vpW = targetAspect * curH;
     }
     else if (curAspect < targetAspect)
     {
-        // window is taller than target -> limit height
         vpH = curW / targetAspect;
     }
 
@@ -137,29 +171,13 @@ FrameResult VulkanFrame::draw(uint32_t &currentFrame)
     vk::Rect2D scissor(scOff, scExt);
     cmd.setScissor(0, 1, &scissor);
 
-    // IMPORTANT: Use targetAspect for projection, NOT the current window aspect
-    // This ensures the projection matches the viewport we're rendering to
+    // Compute view and projection matrices
     glm::mat4 view = glm::lookAt(glm::vec3(3.0f, 3.0f, 3.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
     glm::mat4 proj = glm::perspective(glm::radians(45.0f), targetAspect, 0.1f, 100.0f);
-    proj[1][1] *= -1; // GLM's clip coordinates vs Vulkan
+    proj[1][1] *= -1;
 
-    // Draw all game objects with their individual transforms
-    for (GameObject *obj : gameObjects)
-    {
-        if (!obj || !obj->mesh)
-            continue;
-
-        // Get the model matrix from the object's transform
-        glm::mat4 model = obj->transform.getMatrix();
-        glm::mat4 mvp = proj * view * model;
-
-        // Push MVP via push constants
-        cmd.pushConstants(pipelineRef.getLayout(), vk::ShaderStageFlagBits::eVertex,
-                          0, static_cast<uint32_t>(sizeof(glm::mat4)), &mvp);
-
-        obj->mesh->bind(cmd);
-        obj->mesh->draw(cmd);
-    }
+    // Render all objects (batched by material)
+    renderObjects(cmd, view, proj);
 
     cmd.endRenderPass();
     cmd.end();

@@ -81,6 +81,7 @@ add_executable(vulkan_cube
     vulkan/VulkanFrame.cpp
     src/Mesh.cpp
     src/Primitive.cpp
+    src/Material.cpp
 )
 
 target_link_libraries(vulkan_cube PRIVATE

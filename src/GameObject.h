@@ -3,6 +3,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 class Mesh;
+class Material;
 
 struct Transform
 {
@@ -14,7 +15,7 @@ struct Transform
     {
         glm::mat4 model = glm::mat4(1.0f);
 
-        // Apply transformations: scale -> rotate -> translate
+        // Apply transformations: translate -> rotate -> scale
         model = glm::translate(model, position);
         model = glm::rotate(model, glm::radians(rotation.y), glm::vec3(0.0f, 1.0f, 0.0f));
         model = glm::rotate(model, glm::radians(rotation.x), glm::vec3(1.0f, 0.0f, 0.0f));
@@ -28,8 +29,13 @@ struct Transform
 struct GameObject
 {
     Mesh *mesh = nullptr;
+    Material *material = nullptr; // Add material
     Transform transform;
+    bool enabled = true; // Allow disabling objects
 
-    GameObject(Mesh *m) : mesh(m) {}
-    GameObject(Mesh *m, const Transform &t) : mesh(m), transform(t) {}
+    GameObject(Mesh *m, Material *mat)
+        : mesh(m), material(mat) {}
+
+    GameObject(Mesh *m, Material *mat, const Transform &t)
+        : mesh(m), material(mat), transform(t) {}
 };

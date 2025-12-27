@@ -2,9 +2,11 @@
 #include <GLFW/glfw3.h>
 
 #include "VulkanRenderer.h"
+#include "VulkanShader.h"
 #include "src/Mesh.h"
 #include "src/Primitive.h"
 #include "src/GameObject.h"
+#include "src/Material.h"
 
 #include <iostream>
 #include <cstdlib>
@@ -34,19 +36,6 @@ void VulkanRenderer::initVulkan()
     vulkanRenderPass = std::make_unique<VulkanRenderPass>(*vulkanDevice, *vulkanSwapchain);
     vulkanSwapchain->createFramebuffers(vulkanRenderPass->get());
 
-    // Always use cube shaders for now (supports vertex buffers with transforms)
-    std::string vertPath = "shaders/cube.vert.spv";
-    std::string fragPath = "shaders/cube.frag.spv";
-
-    auto shader = std::make_unique<VulkanShader>(*vulkanDevice, vertPath, fragPath);
-
-    // Set up vertex input
-    auto bindingDesc = Vertex::binding();
-    auto attrs = Vertex::attributes();
-    vulkanGraphicsPipeline = std::make_unique<VulkanGraphicsPipeline>(
-        *vulkanDevice, *vulkanRenderPass, *shader,
-        &bindingDesc, static_cast<uint32_t>(attrs.size()), attrs.data());
-
     vulkanCommand = std::make_unique<VulkanCommand>(*vulkanDevice, MAX_FRAMES_IN_FLIGHT);
     vulkanSync = std::make_unique<VulkanSync>(
         *vulkanDevice,
@@ -57,46 +46,54 @@ void VulkanRenderer::initVulkan()
         *vulkanDevice,
         *vulkanSwapchain,
         *vulkanRenderPass,
-        *vulkanGraphicsPipeline,
         *vulkanCommand,
         *vulkanSync,
         MAX_FRAMES_IN_FLIGHT);
 
-    // Create meshes
+    // Create materials
+    auto cubeShader = std::make_unique<VulkanShader>(*vulkanDevice,
+                                                     "shaders/cube.vert.spv", "shaders/cube.frag.spv");
+    materials.push_back(std::make_unique<Material>(*vulkanDevice, *vulkanRenderPass,
+                                                   std::move(cubeShader)));
+    Material *defaultMaterial = materials[0].get();
+
+    // Create meshes (shared resources)
     auto cubeVerts = Primitives::createCube();
     meshes.push_back(std::make_unique<Mesh>(*vulkanDevice, cubeVerts));
+    Mesh *cubeMesh = meshes[0].get();
 
     auto triangleVerts = Primitives::createTriangle();
     meshes.push_back(std::make_unique<Mesh>(*vulkanDevice, triangleVerts));
+    Mesh *triangleMesh = meshes[1].get();
 
-    // Create game objects with different positions
+    // Create game objects - now each has position + material
     // Cube 1 - center with rotation
     Transform t1;
     t1.position = glm::vec3(0.0f, 0.0f, 0.0f);
     t1.rotation = glm::vec3(-25.0f, 45.0f, 0.0f);
     t1.scale = glm::vec3(1.0f);
-    gameObjects.push_back(std::make_unique<GameObject>(meshes[0].get(), t1));
+    gameObjects.push_back(std::make_unique<GameObject>(cubeMesh, defaultMaterial, t1));
 
     // Cube 2 - to the right
     Transform t2;
     t2.position = glm::vec3(2.0f, 0.0f, 0.0f);
     t2.rotation = glm::vec3(0.0f, 0.0f, 0.0f);
-    t2.scale = glm::vec3(0.5f); // smaller
-    gameObjects.push_back(std::make_unique<GameObject>(meshes[0].get(), t2));
+    t2.scale = glm::vec3(0.5f);
+    gameObjects.push_back(std::make_unique<GameObject>(cubeMesh, defaultMaterial, t2));
 
     // Cube 3 - to the left
     Transform t3;
     t3.position = glm::vec3(-2.0f, 0.0f, 0.0f);
     t3.rotation = glm::vec3(0.0f, 90.0f, 0.0f);
     t3.scale = glm::vec3(0.75f);
-    gameObjects.push_back(std::make_unique<GameObject>(meshes[0].get(), t3));
+    gameObjects.push_back(std::make_unique<GameObject>(cubeMesh, defaultMaterial, t3));
 
     // Triangle - above center
     Transform t4;
     t4.position = glm::vec3(0.0f, 1.5f, 0.0f);
     t4.rotation = glm::vec3(0.0f, 0.0f, 0.0f);
     t4.scale = glm::vec3(1.5f);
-    gameObjects.push_back(std::make_unique<GameObject>(meshes[1].get(), t4));
+    gameObjects.push_back(std::make_unique<GameObject>(triangleMesh, defaultMaterial, t4));
 
     // Register all game objects with the frame renderer
     for (auto &obj : gameObjects)
@@ -130,7 +127,7 @@ void VulkanRenderer::mainLoop()
             if (result == FrameResult::SwapchainOutOfDate)
             {
                 vulkanSwapchain->recreate(vulkanRenderPass->get());
-                vulkanFrame->updateTargetAspect(); // <-- ADD THIS LINE
+                vulkanFrame->updateTargetAspect();
             }
 
             ++frames;
@@ -147,7 +144,7 @@ void VulkanRenderer::mainLoop()
             if (result == FrameResult::SwapchainOutOfDate)
             {
                 vulkanSwapchain->recreate(vulkanRenderPass->get());
-                vulkanFrame->updateTargetAspect(); // <-- ADD THIS LINE
+                vulkanFrame->updateTargetAspect();
             }
         }
     }
@@ -162,13 +159,13 @@ void VulkanRenderer::cleanup()
 
     vulkanDevice->getLogicalDevice().waitIdle();
 
-    // Clean up in reverse order
+    // Clean up in reverse order of dependencies
     vulkanFrame.reset();
-    gameObjects.clear();
-    meshes.clear();
+    gameObjects.clear(); // GameObjects reference meshes/materials
+    materials.clear();   // Materials must be destroyed before device
+    meshes.clear();      // Meshes use GPU resources
     vulkanSync.reset();
     vulkanCommand.reset();
-    vulkanGraphicsPipeline.reset();
     vulkanRenderPass.reset();
     vulkanSwapchain.reset();
     vulkanSurface.reset();
