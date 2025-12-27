@@ -1,6 +1,7 @@
 #pragma once
-
 #include <vulkan/vulkan.hpp>
+#include <vector>
+#include <memory>
 
 class VulkanDevice;
 class VulkanSwapchain;
@@ -8,14 +9,14 @@ class VulkanRenderPass;
 class VulkanGraphicsPipeline;
 class VulkanCommand;
 class VulkanSync;
+class Mesh;
+struct GameObject;
 
 enum class FrameResult
 {
     Success,
     SwapchainOutOfDate
 };
-
-class Mesh;
 
 class VulkanFrame
 {
@@ -26,10 +27,16 @@ public:
                 const VulkanGraphicsPipeline &pipeline,
                 VulkanCommand &command,
                 VulkanSync &sync,
-                Mesh &mesh,
                 uint32_t maxFramesInFlight);
 
     FrameResult draw(uint32_t &currentFrame);
+
+    // Add/remove game objects
+    void addGameObject(GameObject *obj);
+    void clearGameObjects();
+
+    // Update target aspect ratio (call after swapchain recreation)
+    void updateTargetAspect();
 
 private:
     const VulkanDevice &deviceRef;
@@ -38,7 +45,8 @@ private:
     const VulkanGraphicsPipeline &pipelineRef;
     VulkanCommand &commandRef;
     VulkanSync &syncRef;
-    Mesh &meshRef;
+
+    std::vector<GameObject *> gameObjects;
 
     const uint32_t maxFramesInFlight;
     float targetAspect = 1.0f;

@@ -2,18 +2,14 @@
 #include <GLFW/glfw3.h>
 
 #include "VulkanRenderer.h"
-#include "Mesh.h"
+#include "src/Mesh.h"
+#include "src/Primitive.h"
+#include "src/GameObject.h"
 
 #include <iostream>
-#include <vector>
-#include <array>
-#include <fstream>
 #include <cstdlib>
 #include <string>
 
-// ------------------------------------------------------------
-// Constructor / Destructor / Run
-// ------------------------------------------------------------
 VulkanRenderer::VulkanRenderer(GLFWwindow *window) : window(window)
 {
     initVulkan();
@@ -29,9 +25,6 @@ void VulkanRenderer::run()
     mainLoop();
 }
 
-// ------------------------------------------------------------
-// Init / Main Loop / Cleanup
-// ------------------------------------------------------------
 void VulkanRenderer::initVulkan()
 {
     vulkanInstance = std::make_unique<VulkanInstance>(true);
@@ -41,45 +34,20 @@ void VulkanRenderer::initVulkan()
     vulkanRenderPass = std::make_unique<VulkanRenderPass>(*vulkanDevice, *vulkanSwapchain);
     vulkanSwapchain->createFramebuffers(vulkanRenderPass->get());
 
-    // Default to rendering the cube. Set `RENDER_TRIANGLE=1` to render the triangle instead.
-    const char *renderTriangle = std::getenv("RENDER_TRIANGLE");
+    // Always use cube shaders for now (supports vertex buffers with transforms)
     std::string vertPath = "shaders/cube.vert.spv";
     std::string fragPath = "shaders/cube.frag.spv";
-    uint32_t vc = 36;
-    if (renderTriangle && std::string(renderTriangle) == "1")
-    {
-        vertPath = "shaders/triangle.vert.spv";
-        fragPath = "shaders/triangle.frag.spv";
-        vc = 3;
-    }
 
     auto shader = std::make_unique<VulkanShader>(*vulkanDevice, vertPath, fragPath);
 
-    // Select pipeline vertex input based on whether we're rendering the cube (uses vertex buffer)
-    if (vc == 36)
-    {
-        auto bindingDesc = Mesh::Vertex::binding();
-        auto attrs = Mesh::Vertex::attributes();
-        vulkanGraphicsPipeline = std::make_unique<VulkanGraphicsPipeline>(*vulkanDevice, *vulkanRenderPass, *shader, &bindingDesc, static_cast<uint32_t>(attrs.size()), attrs.data());
-    }
-    else
-    {
-        vulkanGraphicsPipeline = std::make_unique<VulkanGraphicsPipeline>(*vulkanDevice, *vulkanRenderPass, *shader);
-    }
-
-    // create mesh (cube or triangle)
-    std::vector<Mesh::Vertex> verts;
-    if (vc == 36)
-        verts = Mesh::createCubeVertices();
-    else
-    {
-        // minimal triangle matching existing shader (using vertex index fallback if shader uses gl_VertexIndex)
-        verts = {{{0.0f, -0.5f, 0.0f}, {1, 0, 0}}, {{0.5f, 0.5f, 0.0f}, {0, 1, 0}}, {{-0.5f, 0.5f, 0.0f}, {0, 0, 1}}};
-    }
+    // Set up vertex input
+    auto bindingDesc = Vertex::binding();
+    auto attrs = Vertex::attributes();
+    vulkanGraphicsPipeline = std::make_unique<VulkanGraphicsPipeline>(
+        *vulkanDevice, *vulkanRenderPass, *shader,
+        &bindingDesc, static_cast<uint32_t>(attrs.size()), attrs.data());
 
     vulkanCommand = std::make_unique<VulkanCommand>(*vulkanDevice, MAX_FRAMES_IN_FLIGHT);
-    // mesh must be created after device is ready
-    vulkanMesh = std::make_unique<Mesh>(*vulkanDevice, verts);
     vulkanSync = std::make_unique<VulkanSync>(
         *vulkanDevice,
         vulkanSwapchain->getFramebuffers().size(),
@@ -92,8 +60,49 @@ void VulkanRenderer::initVulkan()
         *vulkanGraphicsPipeline,
         *vulkanCommand,
         *vulkanSync,
-        *vulkanMesh,
         MAX_FRAMES_IN_FLIGHT);
+
+    // Create meshes
+    auto cubeVerts = Primitives::createCube();
+    meshes.push_back(std::make_unique<Mesh>(*vulkanDevice, cubeVerts));
+
+    auto triangleVerts = Primitives::createTriangle();
+    meshes.push_back(std::make_unique<Mesh>(*vulkanDevice, triangleVerts));
+
+    // Create game objects with different positions
+    // Cube 1 - center with rotation
+    Transform t1;
+    t1.position = glm::vec3(0.0f, 0.0f, 0.0f);
+    t1.rotation = glm::vec3(-25.0f, 45.0f, 0.0f);
+    t1.scale = glm::vec3(1.0f);
+    gameObjects.push_back(std::make_unique<GameObject>(meshes[0].get(), t1));
+
+    // Cube 2 - to the right
+    Transform t2;
+    t2.position = glm::vec3(2.0f, 0.0f, 0.0f);
+    t2.rotation = glm::vec3(0.0f, 0.0f, 0.0f);
+    t2.scale = glm::vec3(0.5f); // smaller
+    gameObjects.push_back(std::make_unique<GameObject>(meshes[0].get(), t2));
+
+    // Cube 3 - to the left
+    Transform t3;
+    t3.position = glm::vec3(-2.0f, 0.0f, 0.0f);
+    t3.rotation = glm::vec3(0.0f, 90.0f, 0.0f);
+    t3.scale = glm::vec3(0.75f);
+    gameObjects.push_back(std::make_unique<GameObject>(meshes[0].get(), t3));
+
+    // Triangle - above center
+    Transform t4;
+    t4.position = glm::vec3(0.0f, 1.5f, 0.0f);
+    t4.rotation = glm::vec3(0.0f, 0.0f, 0.0f);
+    t4.scale = glm::vec3(1.5f);
+    gameObjects.push_back(std::make_unique<GameObject>(meshes[1].get(), t4));
+
+    // Register all game objects with the frame renderer
+    for (auto &obj : gameObjects)
+    {
+        vulkanFrame->addGameObject(obj.get());
+    }
 }
 
 void VulkanRenderer::mainLoop()
@@ -121,6 +130,7 @@ void VulkanRenderer::mainLoop()
             if (result == FrameResult::SwapchainOutOfDate)
             {
                 vulkanSwapchain->recreate(vulkanRenderPass->get());
+                vulkanFrame->updateTargetAspect(); // <-- ADD THIS LINE
             }
 
             ++frames;
@@ -137,6 +147,7 @@ void VulkanRenderer::mainLoop()
             if (result == FrameResult::SwapchainOutOfDate)
             {
                 vulkanSwapchain->recreate(vulkanRenderPass->get());
+                vulkanFrame->updateTargetAspect(); // <-- ADD THIS LINE
             }
         }
     }
@@ -151,15 +162,16 @@ void VulkanRenderer::cleanup()
 
     vulkanDevice->getLogicalDevice().waitIdle();
 
-    // All resources are cleaned up automatically by RAII destructors
+    // Clean up in reverse order
     vulkanFrame.reset();
+    gameObjects.clear();
+    meshes.clear();
     vulkanSync.reset();
     vulkanCommand.reset();
     vulkanGraphicsPipeline.reset();
     vulkanRenderPass.reset();
     vulkanSwapchain.reset();
     vulkanSurface.reset();
-    vulkanMesh.reset();
     vulkanDevice.reset();
     vulkanInstance.reset();
 }

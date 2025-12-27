@@ -5,12 +5,12 @@
 #include "VulkanGraphicsPipeline.h"
 #include "VulkanCommand.h"
 #include "VulkanSync.h"
-#include "Mesh.h"
+#include "src/Mesh.h"
+#include "src/GameObject.h"
 
 #include <array>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-#include <chrono>
 
 VulkanFrame::VulkanFrame(const VulkanDevice &device,
                          const VulkanSwapchain &swapchain,
@@ -18,7 +18,6 @@ VulkanFrame::VulkanFrame(const VulkanDevice &device,
                          const VulkanGraphicsPipeline &pipeline,
                          VulkanCommand &command,
                          VulkanSync &sync,
-                         Mesh &mesh,
                          uint32_t maxFramesInFlight)
     : deviceRef(device),
       swapchainRef(swapchain),
@@ -26,8 +25,25 @@ VulkanFrame::VulkanFrame(const VulkanDevice &device,
       pipelineRef(pipeline),
       commandRef(command),
       syncRef(sync),
-      meshRef(mesh),
       maxFramesInFlight(maxFramesInFlight)
+{
+    auto ext = swapchainRef.getExtent();
+    if (ext.height > 0)
+        targetAspect = static_cast<float>(ext.width) / static_cast<float>(ext.height);
+}
+
+void VulkanFrame::addGameObject(GameObject *obj)
+{
+    if (obj)
+        gameObjects.push_back(obj);
+}
+
+void VulkanFrame::clearGameObjects()
+{
+    gameObjects.clear();
+}
+
+void VulkanFrame::updateTargetAspect()
 {
     auto ext = swapchainRef.getExtent();
     if (ext.height > 0)
@@ -90,12 +106,13 @@ FrameResult VulkanFrame::draw(uint32_t &currentFrame)
 
     cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, pipelineRef.get());
 
-    // Preserve the original aspect ratio by letterboxing when the window is non-uniformly resized.
+    // Get current extent
     auto extent = swapchainRef.getExtent();
     float curW = static_cast<float>(extent.width);
     float curH = static_cast<float>(extent.height);
     float curAspect = (curH > 0.0f) ? (curW / curH) : 1.0f;
 
+    // Calculate viewport with letterboxing
     float vpW = curW;
     float vpH = curH;
     if (curAspect > targetAspect)
@@ -115,28 +132,34 @@ FrameResult VulkanFrame::draw(uint32_t &currentFrame)
     vk::Viewport viewport(vpX, vpY, vpW, vpH, 0.0f, 1.0f);
     cmd.setViewport(0, 1, &viewport);
 
-    // scissor uses integer extents
     vk::Offset2D scOff(static_cast<int32_t>(std::round(vpX)), static_cast<int32_t>(std::round(vpY)));
     vk::Extent2D scExt(static_cast<uint32_t>(std::round(vpW)), static_cast<uint32_t>(std::round(vpH)));
     vk::Rect2D scissor(scOff, scExt);
     cmd.setScissor(0, 1, &scissor);
 
-    // bind mesh vertex buffer and draw
-    // compute a modest static rotation and a simple perspective view
-    float aspect = (extent.height > 0) ? (static_cast<float>(extent.width) / static_cast<float>(extent.height)) : 1.0f;
-
-    glm::mat4 model = glm::rotate(glm::mat4(1.0f), glm::radians(-25.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-    model = glm::rotate(model, glm::radians(45.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-    glm::mat4 view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-    glm::mat4 proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 10.0f);
+    // IMPORTANT: Use targetAspect for projection, NOT the current window aspect
+    // This ensures the projection matches the viewport we're rendering to
+    glm::mat4 view = glm::lookAt(glm::vec3(3.0f, 3.0f, 3.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+    glm::mat4 proj = glm::perspective(glm::radians(45.0f), targetAspect, 0.1f, 100.0f);
     proj[1][1] *= -1; // GLM's clip coordinates vs Vulkan
-    glm::mat4 mvp = proj * view * model;
 
-    // push the mvp via push-constants
-    cmd.pushConstants(pipelineRef.getLayout(), vk::ShaderStageFlagBits::eVertex, 0, static_cast<uint32_t>(sizeof(glm::mat4)), &mvp);
+    // Draw all game objects with their individual transforms
+    for (GameObject *obj : gameObjects)
+    {
+        if (!obj || !obj->mesh)
+            continue;
 
-    meshRef.bind(cmd);
-    meshRef.draw(cmd);
+        // Get the model matrix from the object's transform
+        glm::mat4 model = obj->transform.getMatrix();
+        glm::mat4 mvp = proj * view * model;
+
+        // Push MVP via push constants
+        cmd.pushConstants(pipelineRef.getLayout(), vk::ShaderStageFlagBits::eVertex,
+                          0, static_cast<uint32_t>(sizeof(glm::mat4)), &mvp);
+
+        obj->mesh->bind(cmd);
+        obj->mesh->draw(cmd);
+    }
 
     cmd.endRenderPass();
     cmd.end();
