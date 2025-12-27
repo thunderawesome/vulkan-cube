@@ -5,8 +5,12 @@
 #include "VulkanGraphicsPipeline.h"
 #include "VulkanCommand.h"
 #include "VulkanSync.h"
+#include "Mesh.h"
 
 #include <array>
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <chrono>
 
 VulkanFrame::VulkanFrame(const VulkanDevice &device,
                          const VulkanSwapchain &swapchain,
@@ -14,6 +18,7 @@ VulkanFrame::VulkanFrame(const VulkanDevice &device,
                          const VulkanGraphicsPipeline &pipeline,
                          VulkanCommand &command,
                          VulkanSync &sync,
+                         Mesh &mesh,
                          uint32_t maxFramesInFlight)
     : deviceRef(device),
       swapchainRef(swapchain),
@@ -21,6 +26,7 @@ VulkanFrame::VulkanFrame(const VulkanDevice &device,
       pipelineRef(pipeline),
       commandRef(command),
       syncRef(sync),
+      meshRef(mesh),
       maxFramesInFlight(maxFramesInFlight)
 {
     auto ext = swapchainRef.getExtent();
@@ -67,16 +73,18 @@ FrameResult VulkanFrame::draw(uint32_t &currentFrame)
     vk::CommandBufferBeginInfo beginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
     cmd.begin(beginInfo);
 
-    vk::ClearValue clearColor;
-    clearColor.color = vk::ClearColorValue(std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f});
+    // Clear both color AND depth attachments
+    std::array<vk::ClearValue, 2> clearValues;
+    clearValues[0].color = vk::ClearColorValue(std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f});
+    clearValues[1].depthStencil = vk::ClearDepthStencilValue(1.0f, 0);
 
     vk::RenderPassBeginInfo renderPassInfo;
     renderPassInfo.renderPass = renderPassRef.get();
     renderPassInfo.framebuffer = swapchainRef.getFramebuffer(imageIndex);
     renderPassInfo.renderArea.offset = vk::Offset2D(0, 0);
     renderPassInfo.renderArea.extent = swapchainRef.getExtent();
-    renderPassInfo.clearValueCount = 1;
-    renderPassInfo.pClearValues = &clearColor;
+    renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
+    renderPassInfo.pClearValues = clearValues.data();
 
     cmd.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
 
@@ -113,7 +121,22 @@ FrameResult VulkanFrame::draw(uint32_t &currentFrame)
     vk::Rect2D scissor(scOff, scExt);
     cmd.setScissor(0, 1, &scissor);
 
-    cmd.draw(3, 1, 0, 0);
+    // bind mesh vertex buffer and draw
+    // compute a modest static rotation and a simple perspective view
+    float aspect = (extent.height > 0) ? (static_cast<float>(extent.width) / static_cast<float>(extent.height)) : 1.0f;
+
+    glm::mat4 model = glm::rotate(glm::mat4(1.0f), glm::radians(-25.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+    model = glm::rotate(model, glm::radians(45.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+    glm::mat4 view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+    glm::mat4 proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 10.0f);
+    proj[1][1] *= -1; // GLM's clip coordinates vs Vulkan
+    glm::mat4 mvp = proj * view * model;
+
+    // push the mvp via push-constants
+    cmd.pushConstants(pipelineRef.getLayout(), vk::ShaderStageFlagBits::eVertex, 0, static_cast<uint32_t>(sizeof(glm::mat4)), &mvp);
+
+    meshRef.bind(cmd);
+    meshRef.draw(cmd);
 
     cmd.endRenderPass();
     cmd.end();

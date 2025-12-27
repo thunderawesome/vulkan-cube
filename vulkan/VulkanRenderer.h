@@ -37,6 +37,7 @@ private:
     std::unique_ptr<VulkanGraphicsPipeline> vulkanGraphicsPipeline;
     std::unique_ptr<VulkanCommand> vulkanCommand;
     std::unique_ptr<VulkanSync> vulkanSync;
+    std::unique_ptr<class Mesh> vulkanMesh;
     std::unique_ptr<VulkanSurface> vulkanSurface;
     std::unique_ptr<VulkanFrame> vulkanFrame;
 

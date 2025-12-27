@@ -2,10 +2,14 @@
 #include "VulkanDevice.h"
 #include "VulkanRenderPass.h"
 #include "VulkanShader.h"
+#include <glm/mat4x4.hpp>
 
 VulkanGraphicsPipeline::VulkanGraphicsPipeline(const VulkanDevice &device,
                                                const VulkanRenderPass &renderPass,
-                                               const VulkanShader &shader)
+                                               const VulkanShader &shader,
+                                               const vk::VertexInputBindingDescription *bindingDesc,
+                                               uint32_t attributeCount,
+                                               const vk::VertexInputAttributeDescription *attributeDesc)
     : deviceRef(device)
 {
     // Shader stages
@@ -17,8 +21,16 @@ VulkanGraphicsPipeline::VulkanGraphicsPipeline(const VulkanDevice &device,
 
     vk::PipelineShaderStageCreateInfo shaderStages[] = {vertStageInfo, fragStageInfo};
 
-    // Vertex input — empty for triangle (no vertex attributes)
-    vk::PipelineVertexInputStateCreateInfo vertexInputInfo({}, 0, nullptr, 0, nullptr);
+    // Vertex input — either use provided binding/attributes or fall back to empty (triangle shader)
+    vk::PipelineVertexInputStateCreateInfo vertexInputInfo;
+    if (bindingDesc && attributeCount > 0 && attributeDesc)
+    {
+        vertexInputInfo = vk::PipelineVertexInputStateCreateInfo({}, 1, bindingDesc, attributeCount, attributeDesc);
+    }
+    else
+    {
+        vertexInputInfo = vk::PipelineVertexInputStateCreateInfo({}, 0, nullptr, 0, nullptr);
+    }
 
     vk::PipelineInputAssemblyStateCreateInfo inputAssembly({}, vk::PrimitiveTopology::eTriangleList, false);
 
@@ -30,9 +42,23 @@ VulkanGraphicsPipeline::VulkanGraphicsPipeline(const VulkanDevice &device,
 
     vk::PipelineRasterizationStateCreateInfo rasterizer(
         {}, false, false, vk::PolygonMode::eFill, vk::CullModeFlagBits::eBack,
-        vk::FrontFace::eClockwise, false, 0.0f, 0.0f, 0.0f, 1.0f);
+        vk::FrontFace::eCounterClockwise, false, 0.0f, 0.0f, 0.0f, 1.0f);
 
     vk::PipelineMultisampleStateCreateInfo multisampling({}, vk::SampleCountFlagBits::e1, false);
+
+    // Enable depth testing
+    vk::PipelineDepthStencilStateCreateInfo depthStencil(
+        {},
+        true,                 // depthTestEnable
+        true,                 // depthWriteEnable
+        vk::CompareOp::eLess, // depthCompareOp
+        false,                // depthBoundsTestEnable
+        false,                // stencilTestEnable
+        {},                   // front
+        {},                   // back
+        0.0f,                 // minDepthBounds
+        1.0f                  // maxDepthBounds
+    );
 
     vk::PipelineColorBlendAttachmentState colorBlendAttachment;
     colorBlendAttachment.colorWriteMask = vk::ColorComponentFlagBits::eR |
@@ -43,8 +69,9 @@ VulkanGraphicsPipeline::VulkanGraphicsPipeline(const VulkanDevice &device,
 
     vk::PipelineColorBlendStateCreateInfo colorBlending({}, false, vk::LogicOp::eCopy, 1, &colorBlendAttachment);
 
-    // Pipeline layout (no descriptor sets yet)
-    vk::PipelineLayoutCreateInfo pipelineLayoutInfo({}, 0, nullptr, 0, nullptr);
+    // Pipeline layout (no descriptor sets yet). Add a push-constant range for a 4x4 matrix (mat4 = 16 floats).
+    vk::PushConstantRange pushRange(vk::ShaderStageFlagBits::eVertex, 0, static_cast<uint32_t>(sizeof(glm::mat4)));
+    vk::PipelineLayoutCreateInfo pipelineLayoutInfo({}, 0, nullptr, 1, &pushRange);
     pipelineLayout = deviceRef.getLogicalDevice().createPipelineLayout(pipelineLayoutInfo);
 
     // Graphics pipeline
@@ -57,7 +84,7 @@ VulkanGraphicsPipeline::VulkanGraphicsPipeline(const VulkanDevice &device,
         &viewportState,
         &rasterizer,
         &multisampling,
-        nullptr, // depth stencil
+        &depthStencil,
         &colorBlending,
         &dynamicStateInfo,
         pipelineLayout,

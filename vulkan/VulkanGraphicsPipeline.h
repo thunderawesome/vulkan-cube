@@ -11,7 +11,10 @@ class VulkanGraphicsPipeline
 public:
     VulkanGraphicsPipeline(const VulkanDevice &device,
                            const VulkanRenderPass &renderPass,
-                           const VulkanShader &shader);
+                           const VulkanShader &shader,
+                           const vk::VertexInputBindingDescription *bindingDesc = nullptr,
+                           uint32_t attributeCount = 0,
+                           const vk::VertexInputAttributeDescription *attributeDesc = nullptr);
 
     ~VulkanGraphicsPipeline();
 
