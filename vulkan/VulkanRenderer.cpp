@@ -2,6 +2,7 @@
 #include <GLFW/glfw3.h>
 
 #include "VulkanRenderer.h"
+#include "Mesh.h"
 
 #include <iostream>
 #include <vector>
@@ -40,17 +41,45 @@ void VulkanRenderer::initVulkan()
     vulkanRenderPass = std::make_unique<VulkanRenderPass>(*vulkanDevice, *vulkanSwapchain);
     vulkanSwapchain->createFramebuffers(vulkanRenderPass->get());
 
-    auto triangleShader = std::make_unique<VulkanShader>(
-        *vulkanDevice,
-        "shaders/triangle.vert.spv",
-        "shaders/triangle.frag.spv");
+    // Default to rendering the cube. Set `RENDER_TRIANGLE=1` to render the triangle instead.
+    const char *renderTriangle = std::getenv("RENDER_TRIANGLE");
+    std::string vertPath = "shaders/cube.vert.spv";
+    std::string fragPath = "shaders/cube.frag.spv";
+    uint32_t vc = 36;
+    if (renderTriangle && std::string(renderTriangle) == "1")
+    {
+        vertPath = "shaders/triangle.vert.spv";
+        fragPath = "shaders/triangle.frag.spv";
+        vc = 3;
+    }
 
-    vulkanGraphicsPipeline = std::make_unique<VulkanGraphicsPipeline>(
-        *vulkanDevice,
-        *vulkanRenderPass,
-        *triangleShader);
+    auto shader = std::make_unique<VulkanShader>(*vulkanDevice, vertPath, fragPath);
+
+    // Select pipeline vertex input based on whether we're rendering the cube (uses vertex buffer)
+    if (vc == 36)
+    {
+        auto bindingDesc = Mesh::Vertex::binding();
+        auto attrs = Mesh::Vertex::attributes();
+        vulkanGraphicsPipeline = std::make_unique<VulkanGraphicsPipeline>(*vulkanDevice, *vulkanRenderPass, *shader, &bindingDesc, static_cast<uint32_t>(attrs.size()), attrs.data());
+    }
+    else
+    {
+        vulkanGraphicsPipeline = std::make_unique<VulkanGraphicsPipeline>(*vulkanDevice, *vulkanRenderPass, *shader);
+    }
+
+    // create mesh (cube or triangle)
+    std::vector<Mesh::Vertex> verts;
+    if (vc == 36)
+        verts = Mesh::createCubeVertices();
+    else
+    {
+        // minimal triangle matching existing shader (using vertex index fallback if shader uses gl_VertexIndex)
+        verts = {{{0.0f, -0.5f, 0.0f}, {1, 0, 0}}, {{0.5f, 0.5f, 0.0f}, {0, 1, 0}}, {{-0.5f, 0.5f, 0.0f}, {0, 0, 1}}};
+    }
 
     vulkanCommand = std::make_unique<VulkanCommand>(*vulkanDevice, MAX_FRAMES_IN_FLIGHT);
+    // mesh must be created after device is ready
+    vulkanMesh = std::make_unique<Mesh>(*vulkanDevice, verts);
     vulkanSync = std::make_unique<VulkanSync>(
         *vulkanDevice,
         vulkanSwapchain->getFramebuffers().size(),
@@ -63,6 +92,7 @@ void VulkanRenderer::initVulkan()
         *vulkanGraphicsPipeline,
         *vulkanCommand,
         *vulkanSync,
+        *vulkanMesh,
         MAX_FRAMES_IN_FLIGHT);
 }
 
@@ -129,6 +159,7 @@ void VulkanRenderer::cleanup()
     vulkanRenderPass.reset();
     vulkanSwapchain.reset();
     vulkanSurface.reset();
+    vulkanMesh.reset();
     vulkanDevice.reset();
     vulkanInstance.reset();
 }

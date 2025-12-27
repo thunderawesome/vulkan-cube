@@ -50,4 +50,8 @@ private:
     vk::Extent2D swapChainExtent;
     std::vector<vk::ImageView> swapChainImageViews;
     std::vector<vk::Framebuffer> swapChainFramebuffers;
+    // Depth resources
+    vk::Image depthImage;
+    vk::DeviceMemory depthImageMemory;
+    vk::ImageView depthImageView;
 };

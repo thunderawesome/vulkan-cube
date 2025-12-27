@@ -103,6 +103,38 @@ void VulkanSwapchain::createImageViews()
 
         swapChainImageViews[i] = deviceRef.getLogicalDevice().createImageView(createInfo);
     }
+
+    // create depth resources for the current swapchain extent
+    // simple choice: 32-bit float depth
+    vk::ImageCreateInfo depthInfo({}, vk::ImageType::e2D, vk::Format::eD32Sfloat,
+                                  vk::Extent3D(swapChainExtent.width, swapChainExtent.height, 1), 1, 1,
+                                  vk::SampleCountFlagBits::e1, vk::ImageTiling::eOptimal,
+                                  vk::ImageUsageFlagBits::eDepthStencilAttachment, vk::SharingMode::eExclusive);
+
+    depthImage = deviceRef.getLogicalDevice().createImage(depthInfo);
+    auto memReq = deviceRef.getLogicalDevice().getImageMemoryRequirements(depthImage);
+    vk::MemoryAllocateInfo allocInfo(memReq.size, 0);
+    // find a memory type supporting device local
+    auto memProps = deviceRef.getPhysicalDevice().getMemoryProperties();
+    bool found = false;
+    for (uint32_t i = 0; i < memProps.memoryTypeCount; ++i)
+    {
+        if ((memReq.memoryTypeBits & (1 << i)) && (memProps.memoryTypes[i].propertyFlags & vk::MemoryPropertyFlagBits::eDeviceLocal))
+        {
+            allocInfo.memoryTypeIndex = i;
+            found = true;
+            break;
+        }
+    }
+    if (!found)
+        throw std::runtime_error("failed to find suitable memory type for depth image");
+
+    depthImageMemory = deviceRef.getLogicalDevice().allocateMemory(allocInfo);
+    deviceRef.getLogicalDevice().bindImageMemory(depthImage, depthImageMemory, 0);
+
+    vk::ImageViewCreateInfo depthViewInfo({}, depthImage, vk::ImageViewType::e2D, vk::Format::eD32Sfloat,
+                                          vk::ComponentMapping(), vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eDepth, 0, 1, 0, 1));
+    depthImageView = deviceRef.getLogicalDevice().createImageView(depthViewInfo);
 }
 
 void VulkanSwapchain::createFramebuffers(vk::RenderPass renderPass)
@@ -113,15 +145,8 @@ void VulkanSwapchain::createFramebuffers(vk::RenderPass renderPass)
 
     for (size_t i = 0; i < swapChainImageViews.size(); ++i)
     {
-        vk::FramebufferCreateInfo framebufferInfo(
-            {},
-            renderPass,
-            1,
-            &swapChainImageViews[i],
-            swapChainExtent.width,
-            swapChainExtent.height,
-            1);
-
+        std::array<vk::ImageView, 2> attachments = {swapChainImageViews[i], depthImageView};
+        vk::FramebufferCreateInfo framebufferInfo({}, renderPass, static_cast<uint32_t>(attachments.size()), attachments.data(), swapChainExtent.width, swapChainExtent.height, 1);
         swapChainFramebuffers[i] = deviceRef.getLogicalDevice().createFramebuffer(framebufferInfo);
     }
 }
@@ -144,6 +169,22 @@ void VulkanSwapchain::cleanup()
         deviceRef.getLogicalDevice().destroyImageView(imageView);
     }
     swapChainImageViews.clear();
+
+    if (depthImageView)
+    {
+        deviceRef.getLogicalDevice().destroyImageView(depthImageView);
+        depthImageView = vk::ImageView();
+    }
+    if (depthImage)
+    {
+        deviceRef.getLogicalDevice().destroyImage(depthImage);
+        depthImage = vk::Image();
+    }
+    if (depthImageMemory)
+    {
+        deviceRef.getLogicalDevice().freeMemory(depthImageMemory);
+        depthImageMemory = vk::DeviceMemory();
+    }
 
     if (swapChain)
     {

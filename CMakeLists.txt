@@ -79,6 +79,7 @@ add_executable(vulkan_cube
     vulkan/VulkanSync.cpp
     vulkan/VulkanSurface.cpp
     vulkan/VulkanFrame.cpp
+    vulkan/Mesh.cpp
 )
 
 target_link_libraries(vulkan_cube PRIVATE
@@ -101,6 +102,8 @@ target_include_directories(vulkan_cube PRIVATE
 # ------------------------------
 add_spv_shader(vulkan_cube shaders/triangle.vert shaders/triangle.vert.spv)
 add_spv_shader(vulkan_cube shaders/triangle.frag shaders/triangle.frag.spv)
+add_spv_shader(vulkan_cube shaders/cube.vert shaders/cube.vert.spv)
+add_spv_shader(vulkan_cube shaders/cube.frag shaders/cube.frag.spv)
 
 # ------------------------------
 # Copy texture for runtime override (modding support)

@@ -15,6 +15,8 @@ enum class FrameResult
     SwapchainOutOfDate
 };
 
+class Mesh;
+
 class VulkanFrame
 {
 public:
@@ -24,6 +26,7 @@ public:
                 const VulkanGraphicsPipeline &pipeline,
                 VulkanCommand &command,
                 VulkanSync &sync,
+                Mesh &mesh,
                 uint32_t maxFramesInFlight);
 
     FrameResult draw(uint32_t &currentFrame);
@@ -35,6 +38,7 @@ private:
     const VulkanGraphicsPipeline &pipelineRef;
     VulkanCommand &commandRef;
     VulkanSync &syncRef;
+    Mesh &meshRef;
 
     const uint32_t maxFramesInFlight;
     float targetAspect = 1.0f;
