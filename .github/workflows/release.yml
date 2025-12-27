@@ -1,0 +1,156 @@
+name: Build and Release (Windows, macOS, Linux)
+
+on:
+    push:
+        branches:
+            - main
+
+jobs:
+    build:
+        runs-on: ${{ matrix.os }}
+        strategy:
+            matrix:
+                os: [windows-latest, ubuntu-latest, macos-latest]
+
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+
+            - name: Install Vulkan SDK (Windows)
+              if: matrix.os == 'windows-latest'
+              run: |
+                  Invoke-WebRequest -Uri "https://sdk.lunarg.com/sdk/download/latest/windows/vulkan-sdk.exe" -OutFile VulkanSDK.exe
+                  Start-Process -FilePath VulkanSDK.exe -ArgumentList "/S" -Wait
+                  echo "VULKAN_SDK=C:\VulkanSDK\1.3.290.0" >> $env:GITHUB_ENV
+                  echo "C:\VulkanSDK\1.3.290.0\Bin" >> $env:GITHUB_PATH
+
+            - name: Install Vulkan SDK and dependencies (Ubuntu)
+              if: matrix.os == 'ubuntu-latest'
+              run: |
+                  wget -qO- https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo tee /etc/apt/trusted.gpg.d/lunarg.asc
+                  sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-jammy.list https://packages.lunarg.com/vulkan/lunarg-vulkan-jammy.list
+                  sudo apt update
+                  sudo apt install -y vulkan-sdk libxinerama-dev libxcursor-dev xorg-dev libglu1-mesa-dev pkg-config libwayland-dev wayland-protocols libx11-xcb-dev libxkbcommon-dev
+
+            - name: Install Vulkan SDK (macOS)
+              if: matrix.os == 'macos-latest'
+              run: |
+                  brew install cmake ninja
+                  curl -O https://sdk.lunarg.com/sdk/download/latest/mac/vulkan-sdk.dmg
+                  hdiutil attach vulkan-sdk.dmg
+                  sudo /Volumes/vulkansdk-macos-*/InstallVulkan.app/Contents/MacOS/InstallVulkan --root ~/VulkanSDK --accept-licenses --default-answer --confirm-command install
+                  echo "VULKAN_SDK=$HOME/VulkanSDK/macOS" >> $GITHUB_ENV
+                  echo "$HOME/VulkanSDK/macOS/bin" >> $GITHUB_PATH
+
+            - name: Setup MSVC (Windows only)
+              if: matrix.os == 'windows-latest'
+              uses: microsoft/setup-msbuild@v2
+
+            - name: Configure CMake
+              run: cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
+
+            - name: Build
+              run: cmake --build build --config Release
+
+            - name: Package executables and shaders
+              shell: bash
+              run: |
+                  mkdir -p package
+
+                  if [ "${{ matrix.os }}" = "windows-latest" ]; then
+                    cp build/Release/vulkan_cube.exe package/ || cp build/vulkan_cube.exe package/
+                    cp -r build/shaders package/ 2>/dev/null || cp -r build/Release/shaders package/ 2>/dev/null || true
+                  else
+                    cp build/vulkan_cube package/
+                    cp -r build/shaders package/ 2>/dev/null || true
+                  fi
+
+            - name: Upload artifact
+              uses: actions/upload-artifact@v4
+              with:
+                  name: vulkan-cube-${{ matrix.os }}
+                  path: package/
+
+    release:
+        needs: build
+        runs-on: ubuntu-latest
+        permissions:
+            contents: write
+
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+
+            - name: Download all artifacts
+              uses: actions/download-artifact@v4
+              with:
+                  path: artifacts
+
+            - name: Create per-platform ZIPs
+              run: |
+                  mkdir -p release-zips
+
+                  # Windows
+                  cd artifacts/vulkan-cube-windows-latest
+                  zip -r ../../release-zips/vulkan-cube-windows.zip *
+                  cd ../..
+
+                  # Linux
+                  cd artifacts/vulkan-cube-ubuntu-latest
+                  chmod +x vulkan_cube
+                  zip -r ../../release-zips/vulkan-cube-linux.zip *
+                  cd ../..
+
+                  # macOS
+                  cd artifacts/vulkan-cube-macos-latest
+                  chmod +x vulkan_cube
+                  zip -r ../../release-zips/vulkan-cube-macos.zip *
+                  cd ../..
+
+            - name: Semantic Version Tagging (only on qualifying commits)
+              id: tag
+              uses: paulhatch/semantic-version@v5.4.0
+              with:
+                  major_pattern: "(BREAKING CHANGE|breaking)"
+                  minor_pattern: "feat:"
+                  version_format: "v${major}.${minor}.${patch}"
+                  namespace: ""
+                  bump_each_commit: false
+                  search_commit_body: true
+
+            - name: Create Release with platform ZIPs (only if new version)
+              if: steps.tag.outputs.version_tag != ''
+              uses: softprops/action-gh-release@v2
+              with:
+                  tag_name: ${{ steps.tag.outputs.version_tag }}
+                  name: Vulkan Cube ${{ steps.tag.outputs.version_tag }}
+                  body: |
+                      ## Installation
+
+                      ### Windows
+                      1. Download `vulkan-cube-windows.zip`
+                      2. Extract and run `vulkan_cube.exe`
+                      3. Requires Vulkan-compatible GPU and drivers
+
+                      ### Linux
+                      1. Download `vulkan-cube-linux.zip`
+                      2. Extract and run `./vulkan_cube`
+                      3. Install Vulkan drivers: `sudo apt install vulkan-tools libvulkan1`
+
+                      ### macOS
+                      1. Download `vulkan-cube-macos.zip`
+                      2. Extract and run `./vulkan_cube`
+                      3. Requires MoltenVK (included in Vulkan SDK)
+
+                      **Note**: Compiled SPIR-V shaders are included in the `shaders/` directory.
+                  generate_release_notes: true
+                  files: |
+                      release-zips/vulkan-cube-windows.zip
+                      release-zips/vulkan-cube-linux.zip
+                      release-zips/vulkan-cube-macos.zip
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
