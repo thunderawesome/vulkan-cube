@@ -7,6 +7,8 @@
 #include <vector>
 #include <array>
 #include <fstream>
+#include <cstdlib>
+#include <string>
 
 // ------------------------------------------------------------
 // Constructor / Destructor / Run
@@ -51,7 +53,8 @@ void VulkanRenderer::initVulkan()
     vulkanCommand = std::make_unique<VulkanCommand>(*vulkanDevice, MAX_FRAMES_IN_FLIGHT);
     vulkanSync = std::make_unique<VulkanSync>(
         *vulkanDevice,
-        vulkanSwapchain->getFramebuffers().size());
+        vulkanSwapchain->getFramebuffers().size(),
+        MAX_FRAMES_IN_FLIGHT);
 
     vulkanFrame = std::make_unique<VulkanFrame>(
         *vulkanDevice,
@@ -65,15 +68,46 @@ void VulkanRenderer::initVulkan()
 
 void VulkanRenderer::mainLoop()
 {
-    while (!glfwWindowShouldClose(window))
+    const char *stressEnv = std::getenv("STRESS_FRAMES");
+    if (stressEnv)
     {
-        glfwPollEvents();
-
-        auto result = vulkanFrame->draw(currentFrame);
-
-        if (result == FrameResult::SwapchainOutOfDate)
+        uint64_t targetFrames = 0;
+        try
         {
-            vulkanSwapchain->recreate(vulkanRenderPass->get());
+            targetFrames = std::stoull(std::string(stressEnv));
+        }
+        catch (...)
+        {
+            targetFrames = 0;
+        }
+
+        uint64_t frames = 0;
+        while (frames < targetFrames && !glfwWindowShouldClose(window))
+        {
+            glfwPollEvents();
+
+            auto result = vulkanFrame->draw(currentFrame);
+
+            if (result == FrameResult::SwapchainOutOfDate)
+            {
+                vulkanSwapchain->recreate(vulkanRenderPass->get());
+            }
+
+            ++frames;
+        }
+    }
+    else
+    {
+        while (!glfwWindowShouldClose(window))
+        {
+            glfwPollEvents();
+
+            auto result = vulkanFrame->draw(currentFrame);
+
+            if (result == FrameResult::SwapchainOutOfDate)
+            {
+                vulkanSwapchain->recreate(vulkanRenderPass->get());
+            }
         }
     }
 

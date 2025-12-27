@@ -1,11 +1,11 @@
 #include "VulkanSync.h"
 #include "VulkanDevice.h"
 
-VulkanSync::VulkanSync(const VulkanDevice &device, uint32_t maxFramesInFlight)
+VulkanSync::VulkanSync(const VulkanDevice &device, uint32_t swapchainImageCount, uint32_t maxFramesInFlight)
     : deviceRef(device)
 {
     imageAvailableSemaphores.resize(maxFramesInFlight);
-    renderFinishedSemaphores.resize(maxFramesInFlight);
+    renderFinishedSemaphores.resize(swapchainImageCount);
     inFlightFences.resize(maxFramesInFlight);
 
     vk::SemaphoreCreateInfo semaphoreInfo;
@@ -14,8 +14,12 @@ VulkanSync::VulkanSync(const VulkanDevice &device, uint32_t maxFramesInFlight)
     for (uint32_t i = 0; i < maxFramesInFlight; ++i)
     {
         imageAvailableSemaphores[i] = deviceRef.getLogicalDevice().createSemaphore(semaphoreInfo);
-        renderFinishedSemaphores[i] = deviceRef.getLogicalDevice().createSemaphore(semaphoreInfo);
         inFlightFences[i] = deviceRef.getLogicalDevice().createFence(fenceInfo);
+    }
+
+    for (uint32_t i = 0; i < swapchainImageCount; ++i)
+    {
+        renderFinishedSemaphores[i] = deviceRef.getLogicalDevice().createSemaphore(semaphoreInfo);
     }
 }
 

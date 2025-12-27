@@ -27,16 +27,24 @@ VulkanFrame::VulkanFrame(const VulkanDevice &device,
 
 FrameResult VulkanFrame::draw(uint32_t &currentFrame)
 {
-    deviceRef.getLogicalDevice().waitForFences(
+    (void)deviceRef.getLogicalDevice().waitForFences(
         1, &syncRef.getInFlightFence(currentFrame), VK_TRUE, UINT64_MAX);
 
     uint32_t imageIndex;
-    auto result = deviceRef.getLogicalDevice().acquireNextImageKHR(
-        swapchainRef.getSwapchain(),
-        UINT64_MAX,
-        syncRef.getImageAvailableSemaphore(currentFrame),
-        nullptr,
-        &imageIndex);
+    vk::Result result;
+    try
+    {
+        result = deviceRef.getLogicalDevice().acquireNextImageKHR(
+            swapchainRef.getSwapchain(),
+            UINT64_MAX,
+            syncRef.getImageAvailableSemaphore(currentFrame),
+            nullptr,
+            &imageIndex);
+    }
+    catch (vk::SystemError &e)
+    {
+        result = static_cast<vk::Result>(e.code().value());
+    }
 
     if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR)
     {
@@ -48,7 +56,7 @@ FrameResult VulkanFrame::draw(uint32_t &currentFrame)
         throw std::runtime_error("failed to acquire swap chain image!");
     }
 
-    deviceRef.getLogicalDevice().resetFences(1, &syncRef.getInFlightFence(currentFrame));
+    (void)deviceRef.getLogicalDevice().resetFences(1, &syncRef.getInFlightFence(currentFrame));
 
     vk::CommandBuffer cmd = commandRef.getBuffer(currentFrame);
     cmd.reset();
@@ -95,7 +103,7 @@ FrameResult VulkanFrame::draw(uint32_t &currentFrame)
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &cmd;
 
-    vk::Semaphore signalSemaphores[] = {syncRef.getRenderFinishedSemaphore(currentFrame)};
+    vk::Semaphore signalSemaphores[] = {syncRef.getRenderFinishedSemaphore(imageIndex)};
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = signalSemaphores;
 
@@ -109,7 +117,14 @@ FrameResult VulkanFrame::draw(uint32_t &currentFrame)
     presentInfo.pSwapchains = swapChains;
     presentInfo.pImageIndices = &imageIndex;
 
-    result = deviceRef.getPresentQueue().presentKHR(presentInfo);
+    try
+    {
+        result = deviceRef.getPresentQueue().presentKHR(presentInfo);
+    }
+    catch (vk::SystemError &e)
+    {
+        result = static_cast<vk::Result>(e.code().value());
+    }
 
     if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR)
     {
