@@ -20,13 +20,24 @@ jobs:
 
       - name: Install Vulkan SDK (Windows)
         if: matrix.os == 'windows-latest'
+        shell: powershell
         run: |
-          # Use the "latest" URL to always get the most recent stable Windows SDK installer
-          Invoke-WebRequest -Uri "https://sdk.lunarg.com/sdk/download/latest/windows/VulkanSDK-Installer.exe" -OutFile VulkanSDK.exe
+          # Fetch the latest Windows SDK version string (e.g., 1.4.335.0)
+          $latestVersion = Invoke-RestMethod -Uri "https://vulkan.lunarg.com/sdk/latest/windows.txt"
+
+          # Construct the direct download URL for the installer
+          $downloadUrl = "https://sdk.lunarg.com/sdk/download/$latestVersion/windows/VulkanSDK-$latestVersion-Installer.exe"
+
+          # Download the installer
+          Invoke-WebRequest -Uri $downloadUrl -OutFile VulkanSDK.exe
+
+          # Silent install
           Start-Process -FilePath VulkanSDK.exe -ArgumentList "/S" -Wait
 
-          # Dynamically detect the installed SDK path (latest version)
+          # Dynamically find the installed SDK directory (latest version folder)
           $sdkPath = Get-ChildItem -Path "C:\VulkanSDK\" -Directory | Sort-Object Name -Descending | Select-Object -First 1 | Select-Object -ExpandProperty FullName
+
+          # Set environment variables
           echo "VULKAN_SDK=$sdkPath" >> $env:GITHUB_ENV
           echo "$sdkPath\Bin" >> $env:GITHUB_PATH
 
