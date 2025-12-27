@@ -2,36 +2,91 @@
 #include "VulkanDevice.h"
 #include "VulkanSwapchain.h"
 #include "VulkanRenderPass.h"
-#include "VulkanGraphicsPipeline.h"
 #include "VulkanCommand.h"
 #include "VulkanSync.h"
-#include "Mesh.h"
+#include "src/Mesh.h"
+#include "src/GameObject.h"
+#include "src/Material.h"
 
 #include <array>
+#include <unordered_map>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-#include <chrono>
 
 VulkanFrame::VulkanFrame(const VulkanDevice &device,
                          const VulkanSwapchain &swapchain,
                          const VulkanRenderPass &renderPass,
-                         const VulkanGraphicsPipeline &pipeline,
                          VulkanCommand &command,
                          VulkanSync &sync,
-                         Mesh &mesh,
                          uint32_t maxFramesInFlight)
     : deviceRef(device),
       swapchainRef(swapchain),
       renderPassRef(renderPass),
-      pipelineRef(pipeline),
       commandRef(command),
       syncRef(sync),
-      meshRef(mesh),
       maxFramesInFlight(maxFramesInFlight)
 {
     auto ext = swapchainRef.getExtent();
     if (ext.height > 0)
         targetAspect = static_cast<float>(ext.width) / static_cast<float>(ext.height);
+}
+
+void VulkanFrame::addGameObject(GameObject *obj)
+{
+    if (obj)
+        gameObjects.push_back(obj);
+}
+
+void VulkanFrame::clearGameObjects()
+{
+    gameObjects.clear();
+}
+
+void VulkanFrame::updateTargetAspect()
+{
+    auto ext = swapchainRef.getExtent();
+    if (ext.height > 0)
+        targetAspect = static_cast<float>(ext.width) / static_cast<float>(ext.height);
+}
+
+void VulkanFrame::renderObjects(vk::CommandBuffer cmd,
+                                const glm::mat4 &view,
+                                const glm::mat4 &proj)
+{
+    // Batch objects by material to minimize pipeline switches
+    std::unordered_map<Material *, std::vector<GameObject *>> batchedObjects;
+
+    for (GameObject *obj : gameObjects)
+    {
+        if (obj && obj->enabled && obj->mesh && obj->material)
+        {
+            batchedObjects[obj->material].push_back(obj);
+        }
+    }
+
+    // Render each material batch (C++11 compatible iteration)
+    for (auto it = batchedObjects.begin(); it != batchedObjects.end(); ++it)
+    {
+        Material *material = it->first;
+        std::vector<GameObject *> &objects = it->second;
+
+        // Bind pipeline once per material
+        cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, material->getPipeline());
+
+        // Render all objects using this material
+        for (GameObject *obj : objects)
+        {
+            glm::mat4 model = obj->transform.getMatrix();
+            glm::mat4 mvp = proj * view * model;
+
+            cmd.pushConstants(material->getLayout(),
+                              vk::ShaderStageFlagBits::eVertex,
+                              0, sizeof(glm::mat4), &mvp);
+
+            obj->mesh->bind(cmd);
+            obj->mesh->draw(cmd);
+        }
+    }
 }
 
 FrameResult VulkanFrame::draw(uint32_t &currentFrame)
@@ -88,9 +143,7 @@ FrameResult VulkanFrame::draw(uint32_t &currentFrame)
 
     cmd.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
 
-    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, pipelineRef.get());
-
-    // Preserve the original aspect ratio by letterboxing when the window is non-uniformly resized.
+    // Setup viewport and scissor
     auto extent = swapchainRef.getExtent();
     float curW = static_cast<float>(extent.width);
     float curH = static_cast<float>(extent.height);
@@ -100,12 +153,10 @@ FrameResult VulkanFrame::draw(uint32_t &currentFrame)
     float vpH = curH;
     if (curAspect > targetAspect)
     {
-        // window is wider than target -> limit width
         vpW = targetAspect * curH;
     }
     else if (curAspect < targetAspect)
     {
-        // window is taller than target -> limit height
         vpH = curW / targetAspect;
     }
 
@@ -115,28 +166,18 @@ FrameResult VulkanFrame::draw(uint32_t &currentFrame)
     vk::Viewport viewport(vpX, vpY, vpW, vpH, 0.0f, 1.0f);
     cmd.setViewport(0, 1, &viewport);
 
-    // scissor uses integer extents
     vk::Offset2D scOff(static_cast<int32_t>(std::round(vpX)), static_cast<int32_t>(std::round(vpY)));
     vk::Extent2D scExt(static_cast<uint32_t>(std::round(vpW)), static_cast<uint32_t>(std::round(vpH)));
     vk::Rect2D scissor(scOff, scExt);
     cmd.setScissor(0, 1, &scissor);
 
-    // bind mesh vertex buffer and draw
-    // compute a modest static rotation and a simple perspective view
-    float aspect = (extent.height > 0) ? (static_cast<float>(extent.width) / static_cast<float>(extent.height)) : 1.0f;
+    // Compute view and projection matrices
+    glm::mat4 view = glm::lookAt(glm::vec3(3.0f, 3.0f, 3.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+    glm::mat4 proj = glm::perspective(glm::radians(45.0f), targetAspect, 0.1f, 100.0f);
+    proj[1][1] *= -1;
 
-    glm::mat4 model = glm::rotate(glm::mat4(1.0f), glm::radians(-25.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-    model = glm::rotate(model, glm::radians(45.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-    glm::mat4 view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-    glm::mat4 proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 10.0f);
-    proj[1][1] *= -1; // GLM's clip coordinates vs Vulkan
-    glm::mat4 mvp = proj * view * model;
-
-    // push the mvp via push-constants
-    cmd.pushConstants(pipelineRef.getLayout(), vk::ShaderStageFlagBits::eVertex, 0, static_cast<uint32_t>(sizeof(glm::mat4)), &mvp);
-
-    meshRef.bind(cmd);
-    meshRef.draw(cmd);
+    // Render all objects (batched by material)
+    renderObjects(cmd, view, proj);
 
     cmd.endRenderPass();
     cmd.end();

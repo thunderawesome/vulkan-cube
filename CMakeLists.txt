@@ -79,7 +79,9 @@ add_executable(vulkan_cube
     vulkan/VulkanSync.cpp
     vulkan/VulkanSurface.cpp
     vulkan/VulkanFrame.cpp
-    vulkan/Mesh.cpp
+    src/Mesh.cpp
+    src/Primitive.cpp
+    src/Material.cpp
 )
 
 target_link_libraries(vulkan_cube PRIVATE
