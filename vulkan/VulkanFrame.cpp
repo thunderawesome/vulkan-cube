@@ -23,20 +23,31 @@ VulkanFrame::VulkanFrame(const VulkanDevice &device,
       syncRef(sync),
       maxFramesInFlight(maxFramesInFlight)
 {
+    auto ext = swapchainRef.getExtent();
+    if (ext.height > 0)
+        targetAspect = static_cast<float>(ext.width) / static_cast<float>(ext.height);
 }
 
 FrameResult VulkanFrame::draw(uint32_t &currentFrame)
 {
-    deviceRef.getLogicalDevice().waitForFences(
+    (void)deviceRef.getLogicalDevice().waitForFences(
         1, &syncRef.getInFlightFence(currentFrame), VK_TRUE, UINT64_MAX);
 
     uint32_t imageIndex;
-    auto result = deviceRef.getLogicalDevice().acquireNextImageKHR(
-        swapchainRef.getSwapchain(),
-        UINT64_MAX,
-        syncRef.getImageAvailableSemaphore(currentFrame),
-        nullptr,
-        &imageIndex);
+    vk::Result result;
+    try
+    {
+        result = deviceRef.getLogicalDevice().acquireNextImageKHR(
+            swapchainRef.getSwapchain(),
+            UINT64_MAX,
+            syncRef.getImageAvailableSemaphore(currentFrame),
+            nullptr,
+            &imageIndex);
+    }
+    catch (vk::SystemError &e)
+    {
+        result = static_cast<vk::Result>(e.code().value());
+    }
 
     if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR)
     {
@@ -48,7 +59,7 @@ FrameResult VulkanFrame::draw(uint32_t &currentFrame)
         throw std::runtime_error("failed to acquire swap chain image!");
     }
 
-    deviceRef.getLogicalDevice().resetFences(1, &syncRef.getInFlightFence(currentFrame));
+    (void)deviceRef.getLogicalDevice().resetFences(1, &syncRef.getInFlightFence(currentFrame));
 
     vk::CommandBuffer cmd = commandRef.getBuffer(currentFrame);
     cmd.reset();
@@ -71,14 +82,35 @@ FrameResult VulkanFrame::draw(uint32_t &currentFrame)
 
     cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, pipelineRef.get());
 
-    vk::Viewport viewport(
-        0.0f, 0.0f,
-        static_cast<float>(swapchainRef.getExtent().width),
-        static_cast<float>(swapchainRef.getExtent().height),
-        0.0f, 1.0f);
+    // Preserve the original aspect ratio by letterboxing when the window is non-uniformly resized.
+    auto extent = swapchainRef.getExtent();
+    float curW = static_cast<float>(extent.width);
+    float curH = static_cast<float>(extent.height);
+    float curAspect = (curH > 0.0f) ? (curW / curH) : 1.0f;
+
+    float vpW = curW;
+    float vpH = curH;
+    if (curAspect > targetAspect)
+    {
+        // window is wider than target -> limit width
+        vpW = targetAspect * curH;
+    }
+    else if (curAspect < targetAspect)
+    {
+        // window is taller than target -> limit height
+        vpH = curW / targetAspect;
+    }
+
+    float vpX = (curW - vpW) * 0.5f;
+    float vpY = (curH - vpH) * 0.5f;
+
+    vk::Viewport viewport(vpX, vpY, vpW, vpH, 0.0f, 1.0f);
     cmd.setViewport(0, 1, &viewport);
 
-    vk::Rect2D scissor({0, 0}, swapchainRef.getExtent());
+    // scissor uses integer extents
+    vk::Offset2D scOff(static_cast<int32_t>(std::round(vpX)), static_cast<int32_t>(std::round(vpY)));
+    vk::Extent2D scExt(static_cast<uint32_t>(std::round(vpW)), static_cast<uint32_t>(std::round(vpH)));
+    vk::Rect2D scissor(scOff, scExt);
     cmd.setScissor(0, 1, &scissor);
 
     cmd.draw(3, 1, 0, 0);
@@ -95,7 +127,7 @@ FrameResult VulkanFrame::draw(uint32_t &currentFrame)
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &cmd;
 
-    vk::Semaphore signalSemaphores[] = {syncRef.getRenderFinishedSemaphore(currentFrame)};
+    vk::Semaphore signalSemaphores[] = {syncRef.getRenderFinishedSemaphore(imageIndex)};
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = signalSemaphores;
 
@@ -109,7 +141,14 @@ FrameResult VulkanFrame::draw(uint32_t &currentFrame)
     presentInfo.pSwapchains = swapChains;
     presentInfo.pImageIndices = &imageIndex;
 
-    result = deviceRef.getPresentQueue().presentKHR(presentInfo);
+    try
+    {
+        result = deviceRef.getPresentQueue().presentKHR(presentInfo);
+    }
+    catch (vk::SystemError &e)
+    {
+        result = static_cast<vk::Result>(e.code().value());
+    }
 
     if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR)
     {

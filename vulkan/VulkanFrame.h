@@ -37,4 +37,5 @@ private:
     VulkanSync &syncRef;
 
     const uint32_t maxFramesInFlight;
+    float targetAspect = 1.0f;
 };
