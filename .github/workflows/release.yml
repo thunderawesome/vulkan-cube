@@ -23,7 +23,7 @@ jobs:
         uses: humbletim/setup-vulkan-sdk@v1.2.1
         with:
           vulkan-query-version: latest
-          vulkan-components: Vulkan-Headers,Vulkan-Loader,Glslang,SPIRV-Tools # Added SPIRV-Tools for glslc optimizer support
+          vulkan-components: Vulkan-Headers,Vulkan-Loader,Glslang,SPIRV-Tools
           vulkan-use-cache: true
 
       - name: Install Vulkan SDK and dependencies (Ubuntu)
@@ -103,7 +103,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    if: startsWith(github.ref, 'refs/tags/')
+    # Run the release job on every push to main (like your other project)
+    # Only creates a release/tag if a semantic commit is detected
 
     steps:
       - name: Checkout code
