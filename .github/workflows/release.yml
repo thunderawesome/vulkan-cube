@@ -18,13 +18,32 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install Vulkan SDK (Windows - lightweight headers + loader only)
+      - name: Cache Vulkan SDK Installer (Windows)
+        id: cache-vulkan-installer
         if: matrix.os == 'windows-latest'
-        uses: humbletim/setup-vulkan-sdk@v1.2.1
+        uses: actions/cache@v4
         with:
-          vulkan-query-version: latest # Resolves to current stable (1.4.335.0 as of Dec 2025)
-          vulkan-components: Vulkan-Headers, Vulkan-Loader, glslc
-          vulkan-use-cache: true
+          path: VulkanSDK.exe
+          key: windows-vulkan-sdk-installer-latest-${{ hashFiles('**/*') }} # Change key if version changes
+
+      - name: Install Vulkan SDK (Windows)
+        if: matrix.os == 'windows-latest' && steps.cache-vulkan-installer.outputs.cache-hit != 'true'
+        shell: powershell
+        run: |
+          $latestVersion = (Invoke-WebRequest -Uri "https://vulkan.lunarg.com/sdk/latest/windows.txt" -UseBasicParsing).Content.Trim()
+          $downloadUrl = "https://sdk.lunarg.com/sdk/download/$latestVersion/windows/vulkansdk-windows-X64-$latestVersion.exe"
+          Write-Host "Downloading Vulkan SDK version $latestVersion from $downloadUrl"
+          Invoke-WebRequest -Uri $downloadUrl -OutFile VulkanSDK.exe
+
+      - name: Run Vulkan SDK Installer (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: powershell
+        run: |
+          Start-Process -FilePath VulkanSDK.exe -ArgumentList "/S" -Wait
+          $latestVersion = (Invoke-WebRequest -Uri "https://vulkan.lunarg.com/sdk/latest/windows.txt" -UseBasicParsing).Content.Trim()
+          $sdkPath = "C:\VulkanSDK\$latestVersion"
+          echo "VULKAN_SDK=$sdkPath" >> $env:GITHUB_ENV
+          echo "$sdkPath\Bin" >> $env:GITHUB_PATH
 
       - name: Install Vulkan SDK and dependencies (Ubuntu)
         if: matrix.os == 'ubuntu-latest'
