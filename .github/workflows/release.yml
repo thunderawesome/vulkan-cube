@@ -22,22 +22,21 @@ jobs:
         if: matrix.os == 'windows-latest'
         shell: powershell
         run: |
-          # Fetch the latest Windows SDK version string (e.g., 1.4.335.0)
-          $latestVersion = Invoke-RestMethod -Uri "https://vulkan.lunarg.com/sdk/latest/windows.txt"
+          # Fetch the latest version string from LunarG's official API
+          $latestVersion = (Invoke-WebRequest -Uri "https://vulkan.lunarg.com/sdk/latest/windows.txt" -UseBasicParsing).Content.Trim()
 
-          # Construct the direct download URL for the installer
-          $downloadUrl = "https://sdk.lunarg.com/sdk/download/$latestVersion/windows/VulkanSDK-$latestVersion-Installer.exe"
+          # The current Windows installer filename pattern (lowercase 'vulkansdk')
+          $downloadUrl = "https://sdk.lunarg.com/sdk/download/$latestVersion/windows/vulkansdk-windows-X64-$latestVersion.exe"
 
-          # Download the installer
+          Write-Host "Downloading Vulkan SDK version $latestVersion from $downloadUrl"
           Invoke-WebRequest -Uri $downloadUrl -OutFile VulkanSDK.exe
 
           # Silent install
           Start-Process -FilePath VulkanSDK.exe -ArgumentList "/S" -Wait
 
-          # Dynamically find the installed SDK directory (latest version folder)
+          # Dynamically detect the installed SDK path (sorted by version descending)
           $sdkPath = Get-ChildItem -Path "C:\VulkanSDK\" -Directory | Sort-Object Name -Descending | Select-Object -First 1 | Select-Object -ExpandProperty FullName
 
-          # Set environment variables
           echo "VULKAN_SDK=$sdkPath" >> $env:GITHUB_ENV
           echo "$sdkPath\Bin" >> $env:GITHUB_PATH
 

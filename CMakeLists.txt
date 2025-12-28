@@ -43,20 +43,53 @@ add_library(stb_image INTERFACE)
 target_include_directories(stb_image INTERFACE include)
 
 # ------------------------------
-# Find glslc (from Vulkan SDK)
+# Find shader compiler: prefer glslc, fallback to glslangValidator
 # ------------------------------
-find_program(GLSLC glslc HINTS $ENV{VULKAN_SDK}/Bin)
-if(NOT GLSLC)
-    message(FATAL_ERROR "glslc not found! Make sure Vulkan SDK is installed and VULKAN_SDK environment variable is set.")
+find_program(GLSLC glslc HINTS $ENV{VULKAN_SDK}/Bin $ENV{VULKAN_SDK}/bin)
+find_program(GLSLANG_VALIDATOR glslangValidator)
+
+if(GLSLC)
+    set(SHADER_COMPILER ${GLSLC})
+    set(SHADER_COMPILER_FLAGS "")
+    message(STATUS "Using glslc for shader compilation")
+elseif(GLSLANG_VALIDATOR)
+    set(SHADER_COMPILER ${GLSLANG_VALIDATOR})
+    set(SHADER_COMPILER_FLAGS -V)  # Enable Vulkan semantics and SPIR-V output
+    message(STATUS "Using glslangValidator as fallback for shader compilation")
+else()
+    message(FATAL_ERROR "No GLSL-to-SPIR-V compiler found! Install either glslc (Vulkan SDK) or glslangValidator.")
 endif()
 
 # ------------------------------
 # Helper function to compile shaders to SPIR-V
 # ------------------------------
 function(add_spv_shader TARGET SHADER_FILE OUTPUT_SPV)
+    # Determine shader stage from file extension for glslangValidator
+    get_filename_component(SHADER_EXT ${SHADER_FILE} EXT)
+
+    set(STAGE_FLAG "")
+    if(SHADER_COMPILER STREQUAL ${GLSLANG_VALIDATOR})
+        if(SHADER_EXT STREQUAL ".vert")
+            set(STAGE_FLAG -S vert)
+        elseif(SHADER_EXT STREQUAL ".frag")
+            set(STAGE_FLAG -S frag)
+        elseif(SHADER_EXT STREQUAL ".comp")
+            set(STAGE_FLAG -S comp)
+        elseif(SHADER_EXT STREQUAL ".geom")
+            set(STAGE_FLAG -S geom)
+        elseif(SHADER_EXT STREQUAL ".tesc")
+            set(STAGE_FLAG -S tesc)
+        elseif(SHADER_EXT STREQUAL ".tese")
+            set(STAGE_FLAG -S tese)
+        # Add more stages if needed (rgen, rchit, etc. for ray tracing)
+        endif()
+    endif()
+
     add_custom_command(
         OUTPUT ${CMAKE_BINARY_DIR}/${OUTPUT_SPV}
-        COMMAND ${GLSLC} ${CMAKE_CURRENT_SOURCE_DIR}/${SHADER_FILE} -o ${CMAKE_BINARY_DIR}/${OUTPUT_SPV}
+        COMMAND ${SHADER_COMPILER} ${SHADER_COMPILER_FLAGS} ${STAGE_FLAG}
+                ${CMAKE_CURRENT_SOURCE_DIR}/${SHADER_FILE}
+                -o ${CMAKE_BINARY_DIR}/${OUTPUT_SPV}
         DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/${SHADER_FILE}
         COMMENT "Compiling shader ${SHADER_FILE} to SPIR-V"
     )
@@ -96,7 +129,7 @@ target_include_directories(vulkan_cube PRIVATE
     ${CMAKE_BINARY_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/vulkan
-    ${glfw_SOURCE_DIR}/include  # ← Correct placement: after target is defined
+    ${glfw_SOURCE_DIR}/include
 )
 
 # ------------------------------
@@ -104,8 +137,8 @@ target_include_directories(vulkan_cube PRIVATE
 # ------------------------------
 add_spv_shader(vulkan_cube shaders/triangle.vert shaders/triangle.vert.spv)
 add_spv_shader(vulkan_cube shaders/triangle.frag shaders/triangle.frag.spv)
-add_spv_shader(vulkan_cube shaders/cube.vert shaders/cube.vert.spv)
-add_spv_shader(vulkan_cube shaders/cube.frag shaders/cube.frag.spv)
+add_spv_shader(vulkan_cube shaders/cube.vert    shaders/cube.vert.spv)
+add_spv_shader(vulkan_cube shaders/cube.frag    shaders/cube.frag.spv)
 
 # ------------------------------
 # Copy texture for runtime override (modding support)
