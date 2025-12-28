@@ -18,12 +18,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install Vulkan SDK (Windows)
+      - name: Install Vulkan SDK (Windows - lightweight headers + loader only)
         if: matrix.os == 'windows-latest'
-        uses: humbletim/install-vulkan-sdk@v1.2
+        uses: humbletim/setup-vulkan-sdk@v1.2.1
         with:
-          version: latest # Automatically uses the most recent stable SDK (currently 1.4.335.0)
-          cache: true # Caches the installer for fast subsequent runs
+          vulkan-query-version: latest # Resolves to current stable (1.4.335.0 as of Dec 2025)
+          vulkan-components: Vulkan-Headers, Vulkan-Loader, glslc
+          vulkan-use-cache: true
 
       - name: Install Vulkan SDK and dependencies (Ubuntu)
         if: matrix.os == 'ubuntu-latest'
@@ -52,10 +53,8 @@ jobs:
         if: matrix.os == 'macos-latest'
         run: |
           brew install cmake ninja molten-vk vulkan-headers vulkan-loader glslang
-          # Set up MoltenVK environment variables (stable and widely supported)
           echo "VULKAN_SDK=$(brew --prefix molten-vk)" >> $GITHUB_ENV
           echo "VK_ICD_FILENAMES=$(brew --prefix molten-vk)/share/vulkan/icd.d/MoltenVK_icd.json" >> $GITHUB_ENV
-          # Add glslang tools to PATH
           echo "$(brew --prefix glslang)/bin" >> $GITHUB_PATH
 
       - name: Verify Vulkan and shader tools
@@ -120,16 +119,13 @@ jobs:
       - name: Create per-platform ZIPs
         run: |
           mkdir -p release-zips
-          # Windows
           cd artifacts/vulkan-cube-windows-latest
           zip -r ../../release-zips/vulkan-cube-windows.zip *
           cd ../..
-          # Linux
           cd artifacts/vulkan-cube-ubuntu-latest
           chmod +x vulkan_cube
           zip -r ../../release-zips/vulkan-cube-linux.zip *
           cd ../..
-          # macOS
           cd artifacts/vulkan-cube-macos-latest
           chmod +x vulkan_cube
           zip -r ../../release-zips/vulkan-cube-macos.zip *
