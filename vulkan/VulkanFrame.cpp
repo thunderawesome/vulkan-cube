@@ -53,7 +53,6 @@ void VulkanFrame::renderObjects(vk::CommandBuffer cmd,
                                 const glm::mat4 &view,
                                 const glm::mat4 &proj)
 {
-    // Batch objects by material to minimize pipeline switches
     std::unordered_map<Material *, std::vector<GameObject *>> batchedObjects;
     for (GameObject *obj : gameObjects)
     {
@@ -63,16 +62,13 @@ void VulkanFrame::renderObjects(vk::CommandBuffer cmd,
         }
     }
 
-    // Render each material batch
     for (auto &pair : batchedObjects)
     {
         Material *material = pair.first;
         std::vector<GameObject *> &objects = pair.second;
 
-        // Bind pipeline once per material
         cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, material->getPipeline());
 
-        // Render all objects using this material
         for (GameObject *obj : objects)
         {
             glm::mat4 model = obj->transform.getMatrix();
@@ -88,7 +84,7 @@ void VulkanFrame::renderObjects(vk::CommandBuffer cmd,
 
 FrameResult VulkanFrame::draw(uint32_t &currentFrame)
 {
-    // Wait for the fence of the current frame
+    // Wait for fence
     vk::Fence currentFence = syncRef.getInFlightFence(currentFrame);
     (void)deviceRef.getLogicalDevice().waitForFences(1, &currentFence, VK_TRUE, UINT64_MAX);
 
@@ -119,7 +115,7 @@ FrameResult VulkanFrame::draw(uint32_t &currentFrame)
         throw std::runtime_error("failed to acquire swap chain image!");
     }
 
-    // Reset the fence before submitting new work
+    // Reset fence
     (void)deviceRef.getLogicalDevice().resetFences(1, &currentFence);
 
     vk::CommandBuffer cmd = commandRef.getBuffer(currentFrame);
@@ -128,7 +124,6 @@ FrameResult VulkanFrame::draw(uint32_t &currentFrame)
     vk::CommandBufferBeginInfo beginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
     cmd.begin(beginInfo);
 
-    // Clear values: color + depth
     std::array<vk::ClearValue, 2> clearValues{};
     clearValues[0].color = vk::ClearColorValue(std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f});
     clearValues[1].depthStencil = vk::ClearDepthStencilValue(1.0f, 0);
@@ -143,7 +138,6 @@ FrameResult VulkanFrame::draw(uint32_t &currentFrame)
 
     cmd.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
 
-    // Setup letterboxed viewport/scissor to maintain target aspect ratio
     auto extent = swapchainRef.getExtent();
     float curW = static_cast<float>(extent.width);
     float curH = static_cast<float>(extent.height);
@@ -171,17 +165,16 @@ FrameResult VulkanFrame::draw(uint32_t &currentFrame)
         vk::Extent2D(static_cast<uint32_t>(std::round(vpW)), static_cast<uint32_t>(std::round(vpH))));
     cmd.setScissor(0, 1, &scissor);
 
-    // Camera matrices
     glm::mat4 view = glm::lookAt(glm::vec3(3.0f, 3.0f, 3.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
     glm::mat4 proj = glm::perspective(glm::radians(45.0f), targetAspect, 0.1f, 100.0f);
-    proj[1][1] *= -1; // Flip Y for Vulkan
+    proj[1][1] *= -1;
 
     renderObjects(cmd, view, proj);
 
     cmd.endRenderPass();
     cmd.end();
 
-    // Submit command buffer
+    // Submit
     vk::Semaphore waitSemaphores[] = {syncRef.getImageAvailableSemaphore(currentFrame)};
     vk::PipelineStageFlags waitStages[] = {vk::PipelineStageFlagBits::eColorAttachmentOutput};
 
@@ -198,12 +191,14 @@ FrameResult VulkanFrame::draw(uint32_t &currentFrame)
 
     deviceRef.getGraphicsQueue().submit(submitInfo, currentFence);
 
-    // Present
+    // Present — FIX: store swapchain handle in local variable
+    vk::SwapchainKHR currentSwapchain = swapchainRef.getSwapchain();
+
     vk::PresentInfoKHR presentInfo{};
     presentInfo.waitSemaphoreCount = 1;
     presentInfo.pWaitSemaphores = signalSemaphores;
     presentInfo.swapchainCount = 1;
-    presentInfo.pSwapchains = &swapchainRef.getSwapchain();
+    presentInfo.pSwapchains = &currentSwapchain; // Use local variable
     presentInfo.pImageIndices = &imageIndex;
 
     try
