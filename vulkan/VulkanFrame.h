@@ -44,9 +44,7 @@ private:
     const VulkanRenderPass &renderPassRef;
     VulkanCommand &commandRef;
     VulkanSync &syncRef;
-
     std::vector<GameObject *> gameObjects;
-
     const uint32_t maxFramesInFlight;
     float targetAspect = 1.0f;
 
