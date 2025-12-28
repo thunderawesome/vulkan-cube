@@ -20,25 +20,10 @@ jobs:
 
       - name: Install Vulkan SDK (Windows)
         if: matrix.os == 'windows-latest'
-        shell: powershell
-        run: |
-          # Fetch the latest version string from LunarG's official API
-          $latestVersion = (Invoke-WebRequest -Uri "https://vulkan.lunarg.com/sdk/latest/windows.txt" -UseBasicParsing).Content.Trim()
-
-          # The current Windows installer filename pattern (lowercase 'vulkansdk')
-          $downloadUrl = "https://sdk.lunarg.com/sdk/download/$latestVersion/windows/vulkansdk-windows-X64-$latestVersion.exe"
-
-          Write-Host "Downloading Vulkan SDK version $latestVersion from $downloadUrl"
-          Invoke-WebRequest -Uri $downloadUrl -OutFile VulkanSDK.exe
-
-          # Silent install
-          Start-Process -FilePath VulkanSDK.exe -ArgumentList "/S" -Wait
-
-          # Dynamically detect the installed SDK path (sorted by version descending)
-          $sdkPath = Get-ChildItem -Path "C:\VulkanSDK\" -Directory | Sort-Object Name -Descending | Select-Object -First 1 | Select-Object -ExpandProperty FullName
-
-          echo "VULKAN_SDK=$sdkPath" >> $env:GITHUB_ENV
-          echo "$sdkPath\Bin" >> $env:GITHUB_PATH
+        uses: humbletim/install-vulkan-sdk@v1.2
+        with:
+          version: latest # Automatically uses the most recent stable SDK (currently 1.4.335.0)
+          cache: true # Caches the installer for fast subsequent runs
 
       - name: Install Vulkan SDK and dependencies (Ubuntu)
         if: matrix.os == 'ubuntu-latest'
@@ -119,7 +104,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    # Only run release job on tagged commits to avoid unnecessary releases on every push
     if: startsWith(github.ref, 'refs/tags/')
 
     steps:
