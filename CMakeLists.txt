@@ -81,7 +81,7 @@ function(add_spv_shader TARGET SHADER_FILE OUTPUT_SPV)
             set(STAGE_FLAG -S tesc)
         elseif(SHADER_EXT STREQUAL ".tese")
             set(STAGE_FLAG -S tese)
-        # Add more stages if needed (rgen, rchit, etc. for ray tracing)
+        # Add more stages if needed
         endif()
     endif()
 
@@ -95,6 +95,9 @@ function(add_spv_shader TARGET SHADER_FILE OUTPUT_SPV)
     )
     target_sources(${TARGET} PRIVATE ${CMAKE_BINARY_DIR}/${OUTPUT_SPV})
 endfunction()
+
+# Ensure the shaders output directory exists in the build tree
+file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/shaders)
 
 # ------------------------------
 # Executable
