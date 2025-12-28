@@ -22,9 +22,9 @@ jobs:
         if: matrix.os == 'windows-latest'
         uses: humbletim/setup-vulkan-sdk@v1.2.1
         with:
-          vulkan-query-version: latest # Uses the latest stable SDK config (currently 1.4.335.0)
-          vulkan-components: Vulkan-Headers,Vulkan-Loader,shaderc # Headers + loader + shaderc (provides glslc)
-          vulkan-use-cache: true # Caches built components for fast subsequent runs
+          vulkan-query-version: latest # Latest stable (currently 1.4.335.0)
+          vulkan-components: Vulkan-Headers,Vulkan-Loader,Glslang
+          vulkan-use-cache: true
 
       - name: Install Vulkan SDK and dependencies (Ubuntu)
         if: matrix.os == 'ubuntu-latest'
