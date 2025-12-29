@@ -7,16 +7,17 @@
 
 Material::Material(const VulkanDevice &device,
                    const VulkanRenderPass &renderPass,
-                   std::unique_ptr<VulkanShader> shaderPtr)
+                   std::unique_ptr<VulkanShader> shaderPtr,
+                   vk::CullModeFlags cullMode)
     : shader(std::move(shaderPtr))
 {
-    // Create pipeline with vertex input for standard vertex format
     auto bindingDesc = Vertex::binding();
     auto attrs = Vertex::attributes();
 
     pipeline = std::make_unique<VulkanGraphicsPipeline>(
         device, renderPass, *shader,
-        &bindingDesc, static_cast<uint32_t>(attrs.size()), attrs.data());
+        &bindingDesc, static_cast<uint32_t>(attrs.size()), attrs.data(),
+        cullMode);
 }
 
 Material::~Material() = default;

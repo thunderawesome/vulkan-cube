@@ -4,12 +4,14 @@
 #include "VulkanShader.h"
 #include <glm/mat4x4.hpp>
 
-VulkanGraphicsPipeline::VulkanGraphicsPipeline(const VulkanDevice &device,
-                                               const VulkanRenderPass &renderPass,
-                                               const VulkanShader &shader,
-                                               const vk::VertexInputBindingDescription *bindingDesc,
-                                               uint32_t attributeCount,
-                                               const vk::VertexInputAttributeDescription *attributeDesc)
+VulkanGraphicsPipeline::VulkanGraphicsPipeline(
+    const VulkanDevice &device,
+    const VulkanRenderPass &renderPass,
+    const VulkanShader &shader,
+    const vk::VertexInputBindingDescription *bindingDesc,
+    uint32_t attributeCount,
+    const vk::VertexInputAttributeDescription *attributeDesc,
+    vk::CullModeFlags cullMode)
     : deviceRef(device)
 {
     // Shader stages
@@ -41,8 +43,13 @@ VulkanGraphicsPipeline::VulkanGraphicsPipeline(const VulkanDevice &device,
     vk::PipelineViewportStateCreateInfo viewportState({}, 1, nullptr, 1, nullptr);
 
     vk::PipelineRasterizationStateCreateInfo rasterizer(
-        {}, false, false, vk::PolygonMode::eFill, vk::CullModeFlagBits::eBack,
-        vk::FrontFace::eCounterClockwise, false, 0.0f, 0.0f, 0.0f, 1.0f);
+        {},
+        false, // depthClampEnable
+        false, // rasterizerDiscardEnable
+        vk::PolygonMode::eFill,
+        cullMode,
+        vk::FrontFace::eCounterClockwise,
+        false, 0.0f, 0.0f, 0.0f, 1.0f);
 
     vk::PipelineMultisampleStateCreateInfo multisampling({}, vk::SampleCountFlagBits::e1, false);
 

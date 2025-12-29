@@ -14,7 +14,8 @@ public:
                            const VulkanShader &shader,
                            const vk::VertexInputBindingDescription *bindingDesc = nullptr,
                            uint32_t attributeCount = 0,
-                           const vk::VertexInputAttributeDescription *attributeDesc = nullptr);
+                           const vk::VertexInputAttributeDescription *attributeDesc = nullptr,
+                           vk::CullModeFlags cullMode = vk::CullModeFlagBits::eBack);
 
     ~VulkanGraphicsPipeline();
 

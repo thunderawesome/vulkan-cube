@@ -37,16 +37,21 @@ void SceneBuilder::createMeshes()
 
 void SceneBuilder::createMaterials()
 {
-    // Create default material
+    // Default (back-face culled) material
     auto cubeShader = std::make_unique<VulkanShader>(
-        deviceRef,
-        "shaders/cube.vert.spv",
-        "shaders/cube.frag.spv");
+        deviceRef, "shaders/cube.vert.spv", "shaders/cube.frag.spv");
 
     materials.push_back(std::make_unique<Material>(
-        deviceRef,
-        renderPassRef,
-        std::move(cubeShader)));
+        deviceRef, renderPassRef, std::move(cubeShader),
+        vk::CullModeFlagBits::eBack));
+
+    // Double-sided material
+    auto doubleSidedShader = std::make_unique<VulkanShader>(
+        deviceRef, "shaders/cube.vert.spv", "shaders/cube.frag.spv");
+
+    materials.push_back(std::make_unique<Material>(
+        deviceRef, renderPassRef, std::move(doubleSidedShader),
+        vk::CullModeFlagBits::eNone));
 }
 
 void SceneBuilder::createRotatingCubes(Scene &scene)
@@ -57,7 +62,7 @@ void SceneBuilder::createRotatingCubes(Scene &scene)
     // Cube 1 - center with continuous rotation
     {
         Transform t;
-        t.position = glm::vec3(0.0f, 0.0f, 0.0f);
+        t.position = glm::vec3(0.0f, -2.0f, 0.0f);
         t.rotation = glm::vec3(-25.0f, 45.0f, 0.0f);
         t.scale = glm::vec3(1.0f);
 
@@ -93,13 +98,13 @@ void SceneBuilder::createRotatingCubes(Scene &scene)
 void SceneBuilder::createBouncingTriangle(Scene &scene)
 {
     Mesh *triangleMesh = meshes[1].get();
-    Material *defaultMaterial = materials[0].get();
+    Material *doubleSidedMaterial = materials[1].get();
 
     Transform t;
     t.position = glm::vec3(0.0f, 1.5f, 0.0f);
     t.scale = glm::vec3(1.5f);
 
-    auto triangle = std::make_unique<GameObject>(triangleMesh, defaultMaterial, t);
+    auto triangle = std::make_unique<GameObject>(triangleMesh, doubleSidedMaterial, t);
     triangle->updateFunc = Behaviors::combine({Behaviors::bounce(0.5f, 2.0f),
                                                Behaviors::rotate(glm::vec3(0.0f, 90.0f, 0.0f))});
 

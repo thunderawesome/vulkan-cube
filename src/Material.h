@@ -12,11 +12,11 @@ class Material
 public:
     Material(const VulkanDevice &device,
              const VulkanRenderPass &renderPass,
-             std::unique_ptr<VulkanShader> shader);
+             std::unique_ptr<VulkanShader> shader,
+             vk::CullModeFlags cullMode = vk::CullModeFlagBits::eBack);
 
     ~Material();
 
-    // Delete copy, allow move
     Material(const Material &) = delete;
     Material &operator=(const Material &) = delete;
     Material(Material &&) noexcept;
