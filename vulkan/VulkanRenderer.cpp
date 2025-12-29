@@ -5,6 +5,7 @@
 #include "src/Scene.h"
 #include "src/SceneBuilder.h"
 #include "src/Renderer.h"
+#include "src/FreeCamera.h"
 
 #include <iostream>
 #include <cstdlib>
@@ -59,12 +60,17 @@ void VulkanRenderer::initVulkan()
 
 void VulkanRenderer::initScene()
 {
-    // Create scene and populate it
     scene = std::make_unique<Scene>();
     sceneBuilder = std::make_unique<SceneBuilder>(*vulkanDevice, *vulkanRenderPass);
 
-    // Build the demo scene
     sceneBuilder->createDemoScene(*scene);
+
+    // === Add Free-Fly Camera ===
+    auto camera = std::make_unique<GameObject>(nullptr, nullptr); // No mesh or material
+    camera->transform.position = glm::vec3(0.0f, 2.0f, 8.0f);     // Good starting view
+    camera->updateFunc = Behaviors::freeCamera(window, 6.0f, 0.15f);
+
+    scene->addGameObject(std::move(camera));
 }
 
 void VulkanRenderer::mainLoop()
@@ -87,6 +93,14 @@ void VulkanRenderer::mainLoop()
         {
             glfwPollEvents();
 
+            // === ESC to exit early (even in stress mode) ===
+            if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+            {
+                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL); // Release mouse
+                glfwSetWindowShouldClose(window, GLFW_TRUE);
+                break;
+            }
+
             // Calculate delta time
             auto currentTime = std::chrono::steady_clock::now();
             float deltaTime = std::chrono::duration<float>(currentTime - lastFrameTime).count();
@@ -97,7 +111,6 @@ void VulkanRenderer::mainLoop()
 
             // Draw frame
             auto result = vulkanFrame->draw(currentFrame, *scene);
-
             if (result == FrameResult::SwapchainOutOfDate)
             {
                 vulkanSwapchain->recreate(vulkanRenderPass->get());
@@ -113,6 +126,13 @@ void VulkanRenderer::mainLoop()
         {
             glfwPollEvents();
 
+            // === ESC to exit gracefully ===
+            if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+            {
+                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL); // Release mouse
+                glfwSetWindowShouldClose(window, GLFW_TRUE);
+            }
+
             // Calculate delta time
             auto currentTime = std::chrono::steady_clock::now();
             float deltaTime = std::chrono::duration<float>(currentTime - lastFrameTime).count();
@@ -123,7 +143,6 @@ void VulkanRenderer::mainLoop()
 
             // Draw frame
             auto result = vulkanFrame->draw(currentFrame, *scene);
-
             if (result == FrameResult::SwapchainOutOfDate)
             {
                 vulkanSwapchain->recreate(vulkanRenderPass->get());
