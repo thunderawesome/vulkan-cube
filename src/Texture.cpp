@@ -23,7 +23,7 @@ void Texture::createImage(const std::string &filename)
 {
     int texWidth, texHeight, texChannels;
 
-    // NEW: Flip the image vertically on load to match Vulkan's UV coordinate system (0,0 at top-left)
+    // Flip the image vertically on load to match Vulkan's UV coordinate system (0,0 at top-left)
     stbi_set_flip_vertically_on_load(true);
 
     stbi_uc *pixels = stbi_load(filename.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
@@ -52,7 +52,7 @@ void Texture::createImage(const std::string &filename)
 
     stbi_image_free(pixels);
 
-    // === Create optimal tiled image ===
+    // === Create tiled image ===
     vk::ImageCreateInfo imageInfo({}, vk::ImageType::e2D, vk::Format::eR8G8B8A8Srgb,
                                   vk::Extent3D(static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), 1),
                                   1, 1, vk::SampleCountFlagBits::e1, vk::ImageTiling::eOptimal,

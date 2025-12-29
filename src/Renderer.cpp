@@ -32,7 +32,6 @@ void Renderer::batchAndRender(vk::CommandBuffer cmd,
 
         cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, material->getPipeline());
 
-        // Bind texture descriptor set
         vk::DescriptorSet descSet = material->getDescriptorSet();
         cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
                                material->getLayout(),
@@ -42,14 +41,17 @@ void Renderer::batchAndRender(vk::CommandBuffer cmd,
         {
             glm::mat4 modelMatrix = obj->transform.getMatrix();
 
-            // Cleanly map the push constants using vec4 alignment
             PushConstants constants;
             constants.mvp = context.proj * context.view * modelMatrix;
             constants.model = modelMatrix;
 
-            // Casting vec3 to vec4 handles the 16-byte alignment (std140/std430)
+            // Aligned view position
             constants.viewPos = glm::vec4(context.cameraPos, 1.0f);
-            constants.lightPos = glm::vec4(context.lightPos, 1.0f);
+
+            // Pack light position into xyz and mix factor into w
+            // 0.0f = Pure Texture, 1.0f = Full Vertex Color Tint
+            float colorMixFactor = 0.5f;
+            constants.lightData = glm::vec4(context.lightPos, colorMixFactor);
 
             cmd.pushConstants(material->getLayout(),
                               vk::ShaderStageFlagBits::eVertex,

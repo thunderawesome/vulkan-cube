@@ -81,7 +81,7 @@ void Material::setAlbedoTexture(Texture *texture)
 void Material::createDescriptorResources()
 {
     vk::DescriptorPoolSize poolSize(vk::DescriptorType::eCombinedImageSampler, 1);
-    vk::DescriptorPoolCreateInfo poolInfo({}, 1, 1, &poolSize); // Added maxSets: 1
+    vk::DescriptorPoolCreateInfo poolInfo({}, 1, 1, &poolSize);
     descriptorPool = deviceRef->getLogicalDevice().createDescriptorPool(poolInfo);
 
     vk::DescriptorSetLayout layout = pipeline->getDescriptorSetLayout();

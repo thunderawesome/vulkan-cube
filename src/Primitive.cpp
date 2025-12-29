@@ -19,12 +19,16 @@ namespace Primitives
             glm::vec3(-0.5f, 0.5f, 0.5f)    // 7
         };
 
-        // Standard colors for corners
         std::array<glm::vec3, 8> colors = {
-            glm::vec3(1.0f, 1.0f, 1.0f), glm::vec3(1.0f, 1.0f, 1.0f),
-            glm::vec3(1.0f, 1.0f, 1.0f), glm::vec3(1.0f, 1.0f, 1.0f),
-            glm::vec3(1.0f, 1.0f, 1.0f), glm::vec3(1.0f, 1.0f, 1.0f),
-            glm::vec3(1.0f, 1.0f, 1.0f), glm::vec3(1.0f, 1.0f, 1.0f)};
+            glm::vec3(1.0f, 0.0f, 0.0f), // Red
+            glm::vec3(0.0f, 1.0f, 0.0f), // Green
+            glm::vec3(0.0f, 0.0f, 1.0f), // Blue
+            glm::vec3(1.0f, 1.0f, 0.0f), // Yellow
+            glm::vec3(1.0f, 0.0f, 1.0f), // Magenta
+            glm::vec3(0.0f, 1.0f, 1.0f), // Cyan
+            glm::vec3(1.0f, 0.5f, 0.0f), // Orange
+            glm::vec3(0.5f, 0.0f, 1.0f)  // Purple
+        };
 
         std::array<glm::vec3, 6> faceNormals = {
             glm::vec3(0.0f, 0.0f, -1.0f), // Back
@@ -68,8 +72,10 @@ namespace Primitives
     {
         glm::vec3 normal = glm::vec3(0.0f, 0.0f, 1.0f);
         return {
-            {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, normal, {0.0f, 1.0f}},
-            {{0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, normal, {1.0f, 1.0f}},
-            {{0.0f, -0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, normal, {0.5f, 0.0f}}};
+            // Position            // Color (RGB)        // Normal  // UV
+            {{-0.5f, 0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, normal, {0.0f, 1.0f}}, // Red corner
+            {{0.5f, 0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, normal, {1.0f, 1.0f}},  // Green corner
+            {{0.0f, -0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, normal, {0.5f, 0.0f}}  // Blue corner
+        };
     }
 }

@@ -21,7 +21,7 @@ public:
     vk::Pipeline get() const { return graphicsPipeline; }
     vk::PipelineLayout getLayout() const { return pipelineLayout; }
 
-    // New: Get the descriptor set layout (needed for allocating descriptor sets in Material)
+    // Get the descriptor set layout (needed for allocating descriptor sets in Material)
     vk::DescriptorSetLayout getDescriptorSetLayout() const { return descriptorSetLayout; }
 
 private:
@@ -30,6 +30,6 @@ private:
     vk::PipelineLayout pipelineLayout;
     vk::Pipeline graphicsPipeline;
 
-    // New: Descriptor set layout for the texture sampler
+    // Descriptor set layout for the texture sampler
     vk::DescriptorSetLayout descriptorSetLayout;
 };

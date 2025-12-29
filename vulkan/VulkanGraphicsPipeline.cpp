@@ -2,7 +2,7 @@
 #include "VulkanDevice.h"
 #include "VulkanRenderPass.h"
 #include "VulkanShader.h"
-#include "src/Renderer.h" // Ensure this is included to get the PushConstants struct
+#include "src/Renderer.h"
 #include <glm/mat4x4.hpp>
 
 VulkanGraphicsPipeline::VulkanGraphicsPipeline(
@@ -94,5 +94,5 @@ VulkanGraphicsPipeline::~VulkanGraphicsPipeline()
     if (pipelineLayout)
         device.destroyPipelineLayout(pipelineLayout);
     if (descriptorSetLayout)
-        device.destroyDescriptorSetLayout(descriptorSetLayout); // Clean up layout!
+        device.destroyDescriptorSetLayout(descriptorSetLayout);
 }

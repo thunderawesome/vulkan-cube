@@ -12,7 +12,6 @@ namespace VulkanUtils
                             const void *data,
                             vk::DeviceSize size);
 
-    // Template must be in header!
     template <typename T>
     inline void uploadBuffer(const VulkanDevice &device,
                              vk::BufferUsageFlags usage,

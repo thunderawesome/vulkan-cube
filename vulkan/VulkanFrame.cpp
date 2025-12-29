@@ -7,7 +7,7 @@
 #include "src/Renderer.h"
 #include "src/Scene.h"
 #include "src/GameObject.h"
-#include "src/RenderStructs.h" // Ensure this is included for RenderContext
+#include "src/RenderStructs.h"
 #include <array>
 #include <chrono>
 #include <glm/gtc/matrix_transform.hpp>

@@ -3,8 +3,8 @@
 layout(push_constant) uniform PushConstants {
     mat4 mvp;
     mat4 model;
-    vec4 viewPos;  // Changed to vec4 for 16-byte alignment
-    vec4 lightPos; // Changed to vec4 for 16-byte alignment
+    vec4 viewPos;
+    vec4 lightData; // xyz = position, w = mix factor
 } pc;
 
 layout(location = 0) in vec3 inPos;
@@ -18,21 +18,18 @@ layout(location = 2) out vec3 fragWorldPos;
 layout(location = 3) out vec3 outViewPos;
 layout(location = 4) out vec3 outLightPos;
 layout(location = 5) out vec2 fragUV;
+layout(location = 6) out float outMixFactor;
 
 void main() {
     gl_Position = pc.mvp * vec4(inPos, 1.0);
 
     fragColor = inColor;
-    
-    // Normal in world space (ignoring non-uniform scaling for now)
     fragNormal = mat3(pc.model) * inNormal;
-    
-    // Position in world space
     fragWorldPos = vec3(pc.model * vec4(inPos, 1.0));
     
-    // Extracting xyz from the aligned vec4 push constants
     outViewPos = pc.viewPos.xyz;
-    outLightPos = pc.lightPos.xyz;
+    outLightPos = pc.lightData.xyz; // xyz of lightData
+    outMixFactor = pc.lightData.w;  // w of lightData
     
     fragUV = inUV;
 }

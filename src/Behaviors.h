@@ -15,7 +15,7 @@ namespace Behaviors
         };
     }
 
-    // Orbit around a point
+    // Orbit around a point (Updated to be more flexible)
     inline UpdateFunc orbit(const glm::vec3 &center, float radius, float degreesPerSecond)
     {
         return [center, radius, degreesPerSecond, angle = 0.0f](GameObject &obj, float dt) mutable
@@ -24,18 +24,26 @@ namespace Behaviors
             float rad = glm::radians(angle);
             obj.transform.position = center + glm::vec3(
                                                   radius * std::cos(rad),
-                                                  0.0f,
+                                                  obj.transform.position.y, // Keep current height
                                                   radius * std::sin(rad));
         };
     }
 
-    // Bounce up and down
+    // Bounce up and down relative to the starting position
     inline UpdateFunc bounce(float amplitude, float frequency)
     {
-        return [amplitude, frequency, time = 0.0f](GameObject &obj, float dt) mutable
+        // We use a flag to capture the starting Y position on the first frame
+        return [amplitude, frequency, time = 0.0f, initialY = 0.0f, started = false](GameObject &obj, float dt) mutable
         {
+            if (!started)
+            {
+                initialY = obj.transform.position.y;
+                started = true;
+            }
+
             time += dt;
-            obj.transform.position.y = amplitude * std::sin(frequency * time);
+            // Use += or add to initialY to ensure we don't overwrite world position
+            obj.transform.position.y = initialY + (amplitude * std::sin(frequency * time));
         };
     }
 
