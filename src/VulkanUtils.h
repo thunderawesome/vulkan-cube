@@ -2,8 +2,7 @@
 #include <vulkan/vulkan.hpp>
 #include <vector>
 #include <functional>
-
-class VulkanDevice;
+#include "../vulkan/VulkanDevice.h"
 
 namespace VulkanUtils
 {
@@ -21,11 +20,19 @@ namespace VulkanUtils
     {
         vk::DeviceSize bufferSize = sizeof(T) * data.size();
 
-        vk::BufferCreateInfo bufferInfo({}, bufferSize, usage | vk::BufferUsageFlagBits::eTransferDst, vk::SharingMode::eExclusive);
+        vk::BufferCreateInfo bufferInfo;
+        bufferInfo.size = bufferSize;
+        bufferInfo.usage = usage | vk::BufferUsageFlagBits::eTransferDst;
+        bufferInfo.sharingMode = vk::SharingMode::eExclusive;
+
         outBuffer = device.getLogicalDevice().createBuffer(bufferInfo);
 
         auto memReq = device.getLogicalDevice().getBufferMemoryRequirements(outBuffer);
-        vk::MemoryAllocateInfo allocInfo(memReq.size, device.findMemoryType(memReq.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal));
+
+        vk::MemoryAllocateInfo allocInfo;
+        allocInfo.allocationSize = memReq.size;
+        allocInfo.memoryTypeIndex = device.findMemoryType(memReq.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal);
+
         outMemory = device.getLogicalDevice().allocateMemory(allocInfo);
         device.getLogicalDevice().bindBufferMemory(outBuffer, outMemory, 0);
 
