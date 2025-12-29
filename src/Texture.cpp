@@ -25,7 +25,6 @@ void Texture::createImage(const std::string &filename)
 
     // Flip the image vertically on load to match Vulkan's UV coordinate system (0,0 at top-left)
     stbi_set_flip_vertically_on_load(true);
-
     stbi_uc *pixels = stbi_load(filename.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
     if (!pixels)
     {
@@ -36,7 +35,11 @@ void Texture::createImage(const std::string &filename)
     auto device = deviceRef.getLogicalDevice();
 
     // === Create staging buffer ===
-    vk::BufferCreateInfo stagingBufferInfo({}, imageSize, vk::BufferUsageFlagBits::eTransferSrc, vk::SharingMode::eExclusive);
+    vk::BufferCreateInfo stagingBufferInfo;
+    stagingBufferInfo.size = imageSize;
+    stagingBufferInfo.usage = vk::BufferUsageFlagBits::eTransferSrc;
+    stagingBufferInfo.sharingMode = vk::SharingMode::eExclusive;
+
     vk::Buffer stagingBuffer = device.createBuffer(stagingBufferInfo);
 
     vk::MemoryRequirements memRequirements = device.getBufferMemoryRequirements(stagingBuffer);
@@ -53,11 +56,18 @@ void Texture::createImage(const std::string &filename)
     stbi_image_free(pixels);
 
     // === Create tiled image ===
-    vk::ImageCreateInfo imageInfo({}, vk::ImageType::e2D, vk::Format::eR8G8B8A8Srgb,
-                                  vk::Extent3D(static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), 1),
-                                  1, 1, vk::SampleCountFlagBits::e1, vk::ImageTiling::eOptimal,
-                                  vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
-                                  vk::SharingMode::eExclusive);
+    vk::ImageCreateInfo imageInfo;
+    imageInfo.imageType = vk::ImageType::e2D;
+    imageInfo.format = vk::Format::eR8G8B8A8Srgb;
+    imageInfo.extent = vk::Extent3D(static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), 1);
+    imageInfo.mipLevels = 1;
+    imageInfo.arrayLayers = 1;
+    imageInfo.samples = vk::SampleCountFlagBits::e1;
+    imageInfo.tiling = vk::ImageTiling::eOptimal;
+    imageInfo.usage = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled;
+    imageInfo.sharingMode = vk::SharingMode::eExclusive;
+    imageInfo.initialLayout = vk::ImageLayout::eUndefined;
+
     image = device.createImage(imageInfo);
 
     memRequirements = device.getImageMemoryRequirements(image);
@@ -67,7 +77,8 @@ void Texture::createImage(const std::string &filename)
     device.bindImageMemory(image, imageMemory, 0);
 
     // === One-time command buffer for layout transition and copy ===
-    vk::CommandPoolCreateInfo poolInfo({}, deviceRef.getGraphicsQueueFamily());
+    vk::CommandPoolCreateInfo poolInfo;
+    poolInfo.queueFamilyIndex = deviceRef.getGraphicsQueueFamily();
     vk::CommandPool commandPool = device.createCommandPool(poolInfo);
 
     vk::CommandBufferAllocateInfo cmdAllocInfo(commandPool, vk::CommandBufferLevel::ePrimary, 1);
@@ -77,23 +88,24 @@ void Texture::createImage(const std::string &filename)
     commandBuffer.begin(beginInfo);
 
     // Transition to TRANSFER_DST
-    vk::ImageMemoryBarrier barrier({});
+    vk::ImageMemoryBarrier barrier;
     barrier.oldLayout = vk::ImageLayout::eUndefined;
     barrier.newLayout = vk::ImageLayout::eTransferDstOptimal;
-    barrier.srcAccessMask = {};
+    barrier.srcAccessMask = vk::AccessFlags(); // Using explicit constructor
     barrier.dstAccessMask = vk::AccessFlagBits::eTransferWrite;
     barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barrier.image = image;
     barrier.subresourceRange = vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
 
-    commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eTransfer, {}, {}, {}, barrier);
+    commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eTransfer, vk::DependencyFlags(), {}, {}, barrier);
 
     // Copy staging buffer to image
-    vk::BufferImageCopy copyRegion({}, 0, 0,
-                                   vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1),
-                                   vk::Offset3D(0, 0, 0),
-                                   vk::Extent3D(static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), 1));
+    vk::BufferImageCopy copyRegion;
+    copyRegion.bufferOffset = 0;
+    copyRegion.imageSubresource = vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1);
+    copyRegion.imageExtent = vk::Extent3D(static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), 1);
+
     commandBuffer.copyBufferToImage(stagingBuffer, image, vk::ImageLayout::eTransferDstOptimal, copyRegion);
 
     // Transition to SHADER_READ_ONLY
@@ -102,7 +114,7 @@ void Texture::createImage(const std::string &filename)
     barrier.oldLayout = vk::ImageLayout::eTransferDstOptimal;
     barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
 
-    commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eFragmentShader, {}, {}, {}, barrier);
+    commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eFragmentShader, vk::DependencyFlags(), {}, {}, barrier);
 
     commandBuffer.end();
 
@@ -110,7 +122,6 @@ void Texture::createImage(const std::string &filename)
     deviceRef.getGraphicsQueue().submit(submitInfo);
     deviceRef.getGraphicsQueue().waitIdle();
 
-    // Cleanup
     device.freeCommandBuffers(commandPool, commandBuffer);
     device.destroyCommandPool(commandPool);
     device.destroyBuffer(stagingBuffer);
@@ -119,14 +130,18 @@ void Texture::createImage(const std::string &filename)
 
 void Texture::createImageView()
 {
-    vk::ImageViewCreateInfo viewInfo({}, image, vk::ImageViewType::e2D, vk::Format::eR8G8B8A8Srgb,
-                                     {}, vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
+    vk::ImageViewCreateInfo viewInfo;
+    viewInfo.image = image;
+    viewInfo.viewType = vk::ImageViewType::e2D;
+    viewInfo.format = vk::Format::eR8G8B8A8Srgb;
+    viewInfo.subresourceRange = vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
+
     imageView = deviceRef.getLogicalDevice().createImageView(viewInfo);
 }
 
 void Texture::createSampler()
 {
-    vk::SamplerCreateInfo samplerInfo({});
+    vk::SamplerCreateInfo samplerInfo;
     samplerInfo.magFilter = vk::Filter::eLinear;
     samplerInfo.minFilter = vk::Filter::eLinear;
     samplerInfo.mipmapMode = vk::SamplerMipmapMode::eLinear;
@@ -134,7 +149,7 @@ void Texture::createSampler()
     samplerInfo.addressModeV = vk::SamplerAddressMode::eRepeat;
     samplerInfo.addressModeW = vk::SamplerAddressMode::eRepeat;
     samplerInfo.minLod = 0.0f;
-    samplerInfo.maxLod = 0.0f; // No mipmaps
+    samplerInfo.maxLod = 0.0f;
     samplerInfo.borderColor = vk::BorderColor::eIntOpaqueBlack;
 
     sampler = deviceRef.getLogicalDevice().createSampler(samplerInfo);

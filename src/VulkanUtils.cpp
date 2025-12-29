@@ -6,18 +6,29 @@ namespace VulkanUtils
 {
     void immediateSubmit(const VulkanDevice &device, std::function<void(vk::CommandBuffer)> recorder)
     {
-        vk::CommandPoolCreateInfo poolInfo({}, device.getGraphicsQueueFamily());
+        vk::CommandPoolCreateInfo poolInfo;
+        poolInfo.queueFamilyIndex = device.getGraphicsQueueFamily();
+
         vk::CommandPool cmdPool = device.getLogicalDevice().createCommandPool(poolInfo);
 
-        vk::CommandBufferAllocateInfo allocInfo(cmdPool, vk::CommandBufferLevel::ePrimary, 1);
+        vk::CommandBufferAllocateInfo allocInfo;
+        allocInfo.commandPool = cmdPool;
+        allocInfo.level = vk::CommandBufferLevel::ePrimary;
+        allocInfo.commandBufferCount = 1;
+
         vk::CommandBuffer cmd = device.getLogicalDevice().allocateCommandBuffers(allocInfo)[0];
 
-        vk::CommandBufferBeginInfo beginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
+        vk::CommandBufferBeginInfo beginInfo;
+        beginInfo.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
+
         cmd.begin(beginInfo);
         recorder(cmd);
         cmd.end();
 
-        vk::SubmitInfo submitInfo(0, nullptr, nullptr, 1, &cmd);
+        vk::SubmitInfo submitInfo;
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &cmd;
+
         device.getGraphicsQueue().submit(submitInfo);
         device.getGraphicsQueue().waitIdle();
 
@@ -30,13 +41,19 @@ namespace VulkanUtils
                             const void *data,
                             vk::DeviceSize size)
     {
-        vk::BufferCreateInfo stagingInfo({}, size, vk::BufferUsageFlagBits::eTransferSrc, vk::SharingMode::eExclusive);
+        vk::BufferCreateInfo stagingInfo;
+        stagingInfo.size = size;
+        stagingInfo.usage = vk::BufferUsageFlagBits::eTransferSrc;
+        stagingInfo.sharingMode = vk::SharingMode::eExclusive;
+
         vk::Buffer stagingBuffer = device.getLogicalDevice().createBuffer(stagingInfo);
 
         auto memReq = device.getLogicalDevice().getBufferMemoryRequirements(stagingBuffer);
-        vk::MemoryAllocateInfo allocInfo(memReq.size,
-                                         device.findMemoryType(memReq.memoryTypeBits,
-                                                               vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent));
+        vk::MemoryAllocateInfo allocInfo;
+        allocInfo.allocationSize = memReq.size;
+        allocInfo.memoryTypeIndex = device.findMemoryType(memReq.memoryTypeBits,
+                                                          vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+
         vk::DeviceMemory stagingMemory = device.getLogicalDevice().allocateMemory(allocInfo);
         device.getLogicalDevice().bindBufferMemory(stagingBuffer, stagingMemory, 0);
 
@@ -46,7 +63,8 @@ namespace VulkanUtils
 
         immediateSubmit(device, [&](vk::CommandBuffer cmd)
                         {
-            vk::BufferCopy copyRegion(0, 0, size);
+            vk::BufferCopy copyRegion;
+            copyRegion.size = size;
             cmd.copyBuffer(stagingBuffer, dstBuffer, copyRegion); });
 
         device.getLogicalDevice().destroyBuffer(stagingBuffer);
@@ -60,7 +78,7 @@ namespace VulkanUtils
     {
         immediateSubmit(device, [&](vk::CommandBuffer cmd)
                         {
-            vk::ImageMemoryBarrier barrier({});
+            vk::ImageMemoryBarrier barrier;
             barrier.oldLayout = oldLayout;
             barrier.newLayout = newLayout;
             barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -73,7 +91,7 @@ namespace VulkanUtils
 
             if (oldLayout == vk::ImageLayout::eUndefined && newLayout == vk::ImageLayout::eTransferDstOptimal)
             {
-                barrier.srcAccessMask = {};
+                barrier.srcAccessMask = vk::AccessFlags();
                 barrier.dstAccessMask = vk::AccessFlagBits::eTransferWrite;
                 sourceStage = vk::PipelineStageFlagBits::eTopOfPipe;
                 destinationStage = vk::PipelineStageFlagBits::eTransfer;
@@ -90,7 +108,7 @@ namespace VulkanUtils
                 throw std::runtime_error("Unsupported layout transition!");
             }
 
-            cmd.pipelineBarrier(sourceStage, destinationStage, {}, {}, {}, barrier); });
+            cmd.pipelineBarrier(sourceStage, destinationStage, vk::DependencyFlags(), {}, {}, barrier); });
     }
 
     void uploadTexture(const VulkanDevice &device,
@@ -102,20 +120,29 @@ namespace VulkanUtils
     {
         vk::DeviceSize imageSize = width * height * 4;
 
-        // Staging buffer
         vk::Buffer stagingBuffer;
         vk::DeviceMemory stagingMemory;
         std::vector<char> tempData((char *)pixels, (char *)pixels + imageSize);
         uploadBuffer(device, vk::BufferUsageFlagBits::eTransferSrc, tempData, stagingBuffer, stagingMemory);
 
-        // Create image
-        vk::ImageCreateInfo imageInfo({}, vk::ImageType::e2D, vk::Format::eR8G8B8A8Srgb,
-                                      vk::Extent3D(width, height, 1), 1, 1, vk::SampleCountFlagBits::e1,
-                                      vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled);
+        vk::ImageCreateInfo imageInfo;
+        imageInfo.imageType = vk::ImageType::e2D;
+        imageInfo.format = vk::Format::eR8G8B8A8Srgb;
+        imageInfo.extent = vk::Extent3D(width, height, 1);
+        imageInfo.mipLevels = 1;
+        imageInfo.arrayLayers = 1;
+        imageInfo.samples = vk::SampleCountFlagBits::e1;
+        imageInfo.tiling = vk::ImageTiling::eOptimal;
+        imageInfo.usage = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled;
+        imageInfo.sharingMode = vk::SharingMode::eExclusive;
+
         outImage = device.getLogicalDevice().createImage(imageInfo);
 
         auto memReq = device.getLogicalDevice().getImageMemoryRequirements(outImage);
-        vk::MemoryAllocateInfo allocInfo(memReq.size, device.findMemoryType(memReq.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal));
+        vk::MemoryAllocateInfo allocInfo;
+        allocInfo.allocationSize = memReq.size;
+        allocInfo.memoryTypeIndex = device.findMemoryType(memReq.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal);
+
         outMemory = device.getLogicalDevice().allocateMemory(allocInfo);
         device.getLogicalDevice().bindImageMemory(outImage, outMemory, 0);
 
@@ -123,8 +150,9 @@ namespace VulkanUtils
 
         immediateSubmit(device, [&](vk::CommandBuffer cmd)
                         {
-            vk::BufferImageCopy region({}, 0, 0, vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1),
-                                       vk::Offset3D(0, 0, 0), vk::Extent3D(width, height, 1));
+            vk::BufferImageCopy region;
+            region.imageSubresource = vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1);
+            region.imageExtent = vk::Extent3D(width, height, 1);
             cmd.copyBufferToImage(stagingBuffer, outImage, vk::ImageLayout::eTransferDstOptimal, region); });
 
         transitionImageLayout(device, outImage, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
