@@ -6,18 +6,16 @@
 
 void Renderer::renderObjects(vk::CommandBuffer cmd,
                              const std::vector<GameObject *> &objects,
-                             const glm::mat4 &view,
-                             const glm::mat4 &proj)
+                             const RenderContext &context)
 {
-    batchAndRender(cmd, objects, view, proj);
+    batchAndRender(cmd, objects, context);
 }
 
 void Renderer::batchAndRender(vk::CommandBuffer cmd,
                               const std::vector<GameObject *> &objects,
-                              const glm::mat4 &view,
-                              const glm::mat4 &proj)
+                              const RenderContext &context)
 {
-    // Batch objects by material to minimize pipeline switches
+    // Group objects by material to minimize pipeline state switches
     std::unordered_map<Material *, std::vector<GameObject *>> batchedObjects;
 
     for (GameObject *obj : objects)
@@ -28,38 +26,35 @@ void Renderer::batchAndRender(vk::CommandBuffer cmd,
         }
     }
 
-    // Define a local struct to match the shader's push constant layout
-    struct PushConstants
-    {
-        glm::mat4 mvp;
-        glm::mat4 model;
-    };
-
-    // Render each batch
     for (auto &pair : batchedObjects)
     {
         Material *material = pair.first;
         std::vector<GameObject *> &batch = pair.second;
 
-        // Bind pipeline once per material
+        // Bind the pipeline once for the entire material batch
         cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, material->getPipeline());
 
-        // Render all objects with this material
         for (GameObject *obj : batch)
         {
-            glm::mat4 model = obj->transform.getMatrix();
+            glm::mat4 modelMatrix = obj->transform.getMatrix();
 
+            // Assemble push constants from the provided context and object transform
             PushConstants constants;
-            constants.model = model;
-            constants.mvp = proj * view * model;
+            constants.mvp = context.proj * context.view * modelMatrix;
+            constants.model = modelMatrix;
+            constants.viewPos = context.cameraPos;
+            constants.pad1 = 0.0f;
+            constants.lightPos = context.lightPos;
+            constants.pad2 = 0.0f;
 
-            // Pass the full 128-byte struct (2 matrices) to the shader
+            // Push constants to the GPU
             cmd.pushConstants(material->getLayout(),
                               vk::ShaderStageFlagBits::eVertex,
                               0,
                               sizeof(PushConstants),
                               &constants);
 
+            // Bind mesh buffers and issue draw call
             obj->mesh->bind(cmd);
             obj->mesh->draw(cmd);
         }
