@@ -93,6 +93,14 @@ void VulkanRenderer::mainLoop()
         {
             glfwPollEvents();
 
+            // === ESC to exit early (even in stress mode) ===
+            if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+            {
+                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL); // Release mouse
+                glfwSetWindowShouldClose(window, GLFW_TRUE);
+                break;
+            }
+
             // Calculate delta time
             auto currentTime = std::chrono::steady_clock::now();
             float deltaTime = std::chrono::duration<float>(currentTime - lastFrameTime).count();
@@ -103,7 +111,6 @@ void VulkanRenderer::mainLoop()
 
             // Draw frame
             auto result = vulkanFrame->draw(currentFrame, *scene);
-
             if (result == FrameResult::SwapchainOutOfDate)
             {
                 vulkanSwapchain->recreate(vulkanRenderPass->get());
@@ -119,6 +126,13 @@ void VulkanRenderer::mainLoop()
         {
             glfwPollEvents();
 
+            // === ESC to exit gracefully ===
+            if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+            {
+                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL); // Release mouse
+                glfwSetWindowShouldClose(window, GLFW_TRUE);
+            }
+
             // Calculate delta time
             auto currentTime = std::chrono::steady_clock::now();
             float deltaTime = std::chrono::duration<float>(currentTime - lastFrameTime).count();
@@ -129,7 +143,6 @@ void VulkanRenderer::mainLoop()
 
             // Draw frame
             auto result = vulkanFrame->draw(currentFrame, *scene);
-
             if (result == FrameResult::SwapchainOutOfDate)
             {
                 vulkanSwapchain->recreate(vulkanRenderPass->get());
