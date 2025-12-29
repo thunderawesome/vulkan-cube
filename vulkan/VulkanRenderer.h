@@ -2,7 +2,7 @@
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan.hpp>
 #include <memory>
-#include <vector>
+#include <chrono>
 #include "VulkanInstance.h"
 #include "VulkanDevice.h"
 #include "VulkanSwapchain.h"
@@ -12,9 +12,9 @@
 #include "VulkanSurface.h"
 #include "VulkanFrame.h"
 
-class Mesh;
-class Material;
-struct GameObject;
+class Scene;
+class SceneBuilder;
+class Renderer;
 
 class VulkanRenderer
 {
@@ -25,6 +25,7 @@ public:
 
 private:
     void initVulkan();
+    void initScene();
     void mainLoop();
     void cleanup();
 
@@ -40,12 +41,13 @@ private:
     std::unique_ptr<VulkanSurface> vulkanSurface;
     std::unique_ptr<VulkanFrame> vulkanFrame;
 
-    // Scene resources
-    std::vector<std::unique_ptr<Mesh>> meshes;
-    std::vector<std::unique_ptr<Material>> materials;
-    std::vector<std::unique_ptr<GameObject>> gameObjects;
+    // Rendering and scene
+    std::unique_ptr<Renderer> renderer;
+    std::unique_ptr<Scene> scene;
+    std::unique_ptr<SceneBuilder> sceneBuilder;
 
-    // Frame tracking
+    // Frame timing
+    std::chrono::steady_clock::time_point lastFrameTime;
     uint32_t currentFrame = 0;
     const uint32_t MAX_FRAMES_IN_FLIGHT = 3;
 };

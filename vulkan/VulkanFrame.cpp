@@ -4,13 +4,9 @@
 #include "VulkanRenderPass.h"
 #include "VulkanCommand.h"
 #include "VulkanSync.h"
-#include "src/Mesh.h"
-#include "src/GameObject.h"
-#include "src/Material.h"
-
+#include "src/Renderer.h"
+#include "src/Scene.h"
 #include <array>
-#include <unordered_map>
-#include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
 VulkanFrame::VulkanFrame(const VulkanDevice &device,
@@ -18,76 +14,80 @@ VulkanFrame::VulkanFrame(const VulkanDevice &device,
                          const VulkanRenderPass &renderPass,
                          VulkanCommand &command,
                          VulkanSync &sync,
+                         Renderer &renderer,
                          uint32_t maxFramesInFlight)
     : deviceRef(device),
       swapchainRef(swapchain),
       renderPassRef(renderPass),
       commandRef(command),
       syncRef(sync),
+      rendererRef(renderer),
       maxFramesInFlight(maxFramesInFlight)
 {
     auto ext = swapchainRef.getExtent();
     if (ext.height > 0)
         targetAspect = static_cast<float>(ext.width) / static_cast<float>(ext.height);
-}
 
-void VulkanFrame::addGameObject(GameObject *obj)
-{
-    if (obj)
-        gameObjects.push_back(obj);
-}
+    // Setup default camera
+    viewMatrix = glm::lookAt(glm::vec3(3.0f, 3.0f, 3.0f),
+                             glm::vec3(0.0f),
+                             glm::vec3(0.0f, 1.0f, 0.0f));
 
-void VulkanFrame::clearGameObjects()
-{
-    gameObjects.clear();
+    projMatrix = glm::perspective(glm::radians(45.0f), targetAspect, 0.1f, 100.0f);
+    projMatrix[1][1] *= -1; // Flip Y for Vulkan
 }
 
 void VulkanFrame::updateTargetAspect()
 {
     auto ext = swapchainRef.getExtent();
     if (ext.height > 0)
+    {
         targetAspect = static_cast<float>(ext.width) / static_cast<float>(ext.height);
+        // Update projection matrix with new aspect
+        projMatrix = glm::perspective(glm::radians(45.0f), targetAspect, 0.1f, 100.0f);
+        projMatrix[1][1] *= -1;
+    }
 }
 
-void VulkanFrame::renderObjects(vk::CommandBuffer cmd,
-                                const glm::mat4 &view,
-                                const glm::mat4 &proj)
+void VulkanFrame::setupViewportAndScissor(vk::CommandBuffer cmd)
 {
-    std::unordered_map<Material *, std::vector<GameObject *>> batchedObjects;
-    for (GameObject *obj : gameObjects)
+    auto extent = swapchainRef.getExtent();
+    float curW = static_cast<float>(extent.width);
+    float curH = static_cast<float>(extent.height);
+    float curAspect = (curH > 0.0f) ? (curW / curH) : 1.0f;
+
+    float vpW = curW;
+    float vpH = curH;
+    if (curAspect > targetAspect)
     {
-        if (obj && obj->enabled && obj->mesh && obj->material)
-        {
-            batchedObjects[obj->material].push_back(obj);
-        }
+        vpW = targetAspect * curH;
+    }
+    else if (curAspect < targetAspect)
+    {
+        vpH = curW / targetAspect;
     }
 
-    for (auto &pair : batchedObjects)
-    {
-        Material *material = pair.first;
-        std::vector<GameObject *> &objects = pair.second;
+    float vpX = (curW - vpW) * 0.5f;
+    float vpY = (curH - vpH) * 0.5f;
 
-        cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, material->getPipeline());
+    vk::Viewport viewport(vpX, vpY, vpW, vpH, 0.0f, 1.0f);
+    cmd.setViewport(0, 1, &viewport);
 
-        for (GameObject *obj : objects)
-        {
-            glm::mat4 model = obj->transform.getMatrix();
-            glm::mat4 mvp = proj * view * model;
-            cmd.pushConstants(material->getLayout(),
-                              vk::ShaderStageFlagBits::eVertex,
-                              0, sizeof(glm::mat4), &mvp);
-            obj->mesh->bind(cmd);
-            obj->mesh->draw(cmd);
-        }
-    }
+    vk::Rect2D scissor(
+        vk::Offset2D(static_cast<int32_t>(std::round(vpX)),
+                     static_cast<int32_t>(std::round(vpY))),
+        vk::Extent2D(static_cast<uint32_t>(std::round(vpW)),
+                     static_cast<uint32_t>(std::round(vpH))));
+    cmd.setScissor(0, 1, &scissor);
 }
 
-FrameResult VulkanFrame::draw(uint32_t &currentFrame)
+FrameResult VulkanFrame::draw(uint32_t &currentFrame, const Scene &scene)
 {
     // Wait for fence
     vk::Fence currentFence = syncRef.getInFlightFence(currentFrame);
     (void)deviceRef.getLogicalDevice().waitForFences(1, &currentFence, VK_TRUE, UINT64_MAX);
 
+    // Acquire next image
     uint32_t imageIndex;
     vk::Result result;
 
@@ -118,12 +118,14 @@ FrameResult VulkanFrame::draw(uint32_t &currentFrame)
     // Reset fence
     (void)deviceRef.getLogicalDevice().resetFences(1, &currentFence);
 
+    // Record command buffer
     vk::CommandBuffer cmd = commandRef.getBuffer(currentFrame);
     cmd.reset();
 
     vk::CommandBufferBeginInfo beginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
     cmd.begin(beginInfo);
 
+    // Begin render pass
     std::array<vk::ClearValue, 2> clearValues{};
     clearValues[0].color = vk::ClearColorValue(std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f});
     clearValues[1].depthStencil = vk::ClearDepthStencilValue(1.0f, 0);
@@ -138,38 +140,12 @@ FrameResult VulkanFrame::draw(uint32_t &currentFrame)
 
     cmd.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
 
-    auto extent = swapchainRef.getExtent();
-    float curW = static_cast<float>(extent.width);
-    float curH = static_cast<float>(extent.height);
-    float curAspect = (curH > 0.0f) ? (curW / curH) : 1.0f;
+    // Setup viewport and scissor
+    setupViewportAndScissor(cmd);
 
-    float vpW = curW;
-    float vpH = curH;
-    if (curAspect > targetAspect)
-    {
-        vpW = targetAspect * curH;
-    }
-    else if (curAspect < targetAspect)
-    {
-        vpH = curW / targetAspect;
-    }
-
-    float vpX = (curW - vpW) * 0.5f;
-    float vpY = (curH - vpH) * 0.5f;
-
-    vk::Viewport viewport(vpX, vpY, vpW, vpH, 0.0f, 1.0f);
-    cmd.setViewport(0, 1, &viewport);
-
-    vk::Rect2D scissor(
-        vk::Offset2D(static_cast<int32_t>(std::round(vpX)), static_cast<int32_t>(std::round(vpY))),
-        vk::Extent2D(static_cast<uint32_t>(std::round(vpW)), static_cast<uint32_t>(std::round(vpH))));
-    cmd.setScissor(0, 1, &scissor);
-
-    glm::mat4 view = glm::lookAt(glm::vec3(3.0f, 3.0f, 3.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-    glm::mat4 proj = glm::perspective(glm::radians(45.0f), targetAspect, 0.1f, 100.0f);
-    proj[1][1] *= -1;
-
-    renderObjects(cmd, view, proj);
+    // Render scene
+    auto activeObjects = scene.getActiveGameObjects();
+    rendererRef.renderObjects(cmd, activeObjects, viewMatrix, projMatrix);
 
     cmd.endRenderPass();
     cmd.end();
@@ -191,14 +167,14 @@ FrameResult VulkanFrame::draw(uint32_t &currentFrame)
 
     deviceRef.getGraphicsQueue().submit(submitInfo, currentFence);
 
-    // Present — FIX: store swapchain handle in local variable
+    // Present
     vk::SwapchainKHR currentSwapchain = swapchainRef.getSwapchain();
 
     vk::PresentInfoKHR presentInfo{};
     presentInfo.waitSemaphoreCount = 1;
     presentInfo.pWaitSemaphores = signalSemaphores;
     presentInfo.swapchainCount = 1;
-    presentInfo.pSwapchains = &currentSwapchain; // Use local variable
+    presentInfo.pSwapchains = &currentSwapchain;
     presentInfo.pImageIndices = &imageIndex;
 
     try

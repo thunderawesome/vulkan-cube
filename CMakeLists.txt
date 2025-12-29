@@ -118,6 +118,9 @@ add_executable(vulkan_cube
     src/Mesh.cpp
     src/Primitive.cpp
     src/Material.cpp
+    src/Renderer.cpp
+    src/Scene.cpp
+    src/SceneBuilder.cpp
 )
 
 target_link_libraries(vulkan_cube PRIVATE
