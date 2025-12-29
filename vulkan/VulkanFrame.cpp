@@ -7,7 +7,9 @@
 #include "src/Renderer.h"
 #include "src/Scene.h"
 #include "src/GameObject.h"
+#include "src/RenderStructs.h" // Ensure this is included for RenderContext
 #include <array>
+#include <chrono>
 #include <glm/gtc/matrix_transform.hpp>
 
 VulkanFrame::VulkanFrame(const VulkanDevice &device,
@@ -100,7 +102,6 @@ glm::mat4 VulkanFrame::getCameraViewMatrix(const Scene &scene) const
         }
     }
 
-    // Fallback if no camera found
     return glm::lookAt(glm::vec3(0.0f, 2.0f, 8.0f),
                        glm::vec3(0.0f, 0.0f, 0.0f),
                        glm::vec3(0.0f, 1.0f, 0.0f));
@@ -150,7 +151,7 @@ FrameResult VulkanFrame::draw(uint32_t &currentFrame, const Scene &scene)
 
     // Begin render pass
     std::array<vk::ClearValue, 2> clearValues{};
-    clearValues[0].color = vk::ClearColorValue(std::array<float, 4>{0.01f, 0.01f, 0.02f, 1.0f}); // Nice dark blue background
+    clearValues[0].color = vk::ClearColorValue(std::array<float, 4>{0.01f, 0.01f, 0.02f, 1.0f});
     clearValues[1].depthStencil = vk::ClearDepthStencilValue(1.0f, 0);
 
     vk::RenderPassBeginInfo renderPassInfo{};
@@ -163,15 +164,28 @@ FrameResult VulkanFrame::draw(uint32_t &currentFrame, const Scene &scene)
 
     cmd.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
 
-    // Setup viewport and scissor
     setupViewportAndScissor(cmd);
 
-    // === Dynamic Camera View Matrix ===
-    glm::mat4 view = getCameraViewMatrix(scene);
+    // --- Prepare Render Context ---
+    RenderContext context;
+    context.view = getCameraViewMatrix(scene);
+    context.proj = projMatrix;
 
-    // Render scene with updated view
+    // Extract camera world position from the inverse view matrix
+    glm::mat4 invView = glm::inverse(context.view);
+    context.cameraPos = glm::vec3(invView[3]);
+
+    // Simple time tracking for dynamic light position
+    static auto startTime = std::chrono::high_resolution_clock::now();
+    auto currentTime = std::chrono::high_resolution_clock::now();
+    float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
+
+    // Orbiting light logic: circular motion on the XZ plane
+    context.lightPos = glm::vec3(sin(time) * 5.0f, 5.0f, cos(time) * 5.0f);
+
+    // Render scene using the context
     auto activeObjects = scene.getActiveGameObjects();
-    rendererRef.renderObjects(cmd, activeObjects, view, projMatrix);
+    rendererRef.renderObjects(cmd, activeObjects, context);
 
     cmd.endRenderPass();
     cmd.end();
