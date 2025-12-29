@@ -1,7 +1,5 @@
 #pragma once
 #include <vulkan/vulkan.hpp>
-#include <vector>
-#include <memory>
 #include <glm/glm.hpp>
 
 class VulkanDevice;
@@ -9,9 +7,8 @@ class VulkanSwapchain;
 class VulkanRenderPass;
 class VulkanCommand;
 class VulkanSync;
-class Mesh;
-class Material;
-struct GameObject;
+class Renderer;
+class Scene;
 
 enum class FrameResult
 {
@@ -27,16 +24,20 @@ public:
                 const VulkanRenderPass &renderPass,
                 VulkanCommand &command,
                 VulkanSync &sync,
+                Renderer &renderer,
                 uint32_t maxFramesInFlight);
 
-    FrameResult draw(uint32_t &currentFrame);
+    // Main draw function
+    FrameResult draw(uint32_t &currentFrame, const Scene &scene);
 
-    // Add/remove game objects
-    void addGameObject(GameObject *obj);
-    void clearGameObjects();
-
-    // Update target aspect ratio (call after swapchain recreation)
+    // Update target aspect ratio after swapchain recreation
     void updateTargetAspect();
+
+    // Camera control
+    void setView(const glm::mat4 &view) { viewMatrix = view; }
+    void setProjection(const glm::mat4 &proj) { projMatrix = proj; }
+    const glm::mat4 &getView() const { return viewMatrix; }
+    const glm::mat4 &getProjection() const { return projMatrix; }
 
 private:
     const VulkanDevice &deviceRef;
@@ -44,12 +45,13 @@ private:
     const VulkanRenderPass &renderPassRef;
     VulkanCommand &commandRef;
     VulkanSync &syncRef;
-    std::vector<GameObject *> gameObjects;
+    Renderer &rendererRef;
+
     const uint32_t maxFramesInFlight;
     float targetAspect = 1.0f;
 
-    // Helper to batch objects by material for efficient rendering
-    void renderObjects(vk::CommandBuffer cmd,
-                       const glm::mat4 &view,
-                       const glm::mat4 &proj);
+    glm::mat4 viewMatrix = glm::mat4(1.0f);
+    glm::mat4 projMatrix = glm::mat4(1.0f);
+
+    void setupViewportAndScissor(vk::CommandBuffer cmd);
 };

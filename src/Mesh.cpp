@@ -47,6 +47,8 @@ uint32_t Mesh::findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags prope
 void Mesh::createVertexBuffer(const std::vector<Vertex> &vertices)
 {
     vertexCount = static_cast<uint32_t>(vertices.size());
+    if (vertices.size() > std::numeric_limits<uint32_t>::max())
+        throw std::runtime_error("Too many vertices!");
     vk::DeviceSize bufferSize = sizeof(Vertex) * vertexCount;
 
     // staging buffer
