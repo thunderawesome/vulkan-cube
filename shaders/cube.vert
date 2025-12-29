@@ -2,7 +2,7 @@
 
 layout(push_constant) uniform PushConstants {
     mat4 mvp;
-    mat4 model; // You'll need the model matrix specifically for lighting
+    mat4 model;
 } pc;
 
 layout(location = 0) in vec3 inPos;

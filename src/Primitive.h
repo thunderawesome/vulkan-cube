@@ -20,7 +20,7 @@ struct Vertex
     }
 
     static std::array<vk::VertexInputAttributeDescription, 3> attributes()
-    { // Changed to 3
+    {
         std::array<vk::VertexInputAttributeDescription, 3> attrs{};
 
         attrs[0].location = 0;
