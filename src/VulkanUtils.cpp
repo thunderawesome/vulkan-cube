@@ -1,5 +1,4 @@
 #include "VulkanUtils.h"
-#include "../vulkan/VulkanDevice.h"
 #include <stdexcept>
 
 namespace VulkanUtils
@@ -49,6 +48,7 @@ namespace VulkanUtils
         vk::Buffer stagingBuffer = device.getLogicalDevice().createBuffer(stagingInfo);
 
         auto memReq = device.getLogicalDevice().getBufferMemoryRequirements(stagingBuffer);
+
         vk::MemoryAllocateInfo allocInfo;
         allocInfo.allocationSize = memReq.size;
         allocInfo.memoryTypeIndex = device.findMemoryType(memReq.memoryTypeBits,
@@ -122,7 +122,11 @@ namespace VulkanUtils
 
         vk::Buffer stagingBuffer;
         vk::DeviceMemory stagingMemory;
-        std::vector<char> tempData((char *)pixels, (char *)pixels + imageSize);
+
+        // Note: Using explicit vector initialization here
+        std::vector<char> tempData((const char *)pixels, (const char *)pixels + imageSize);
+
+        // Call the template from the header
         uploadBuffer(device, vk::BufferUsageFlagBits::eTransferSrc, tempData, stagingBuffer, stagingMemory);
 
         vk::ImageCreateInfo imageInfo;
@@ -139,6 +143,7 @@ namespace VulkanUtils
         outImage = device.getLogicalDevice().createImage(imageInfo);
 
         auto memReq = device.getLogicalDevice().getImageMemoryRequirements(outImage);
+
         vk::MemoryAllocateInfo allocInfo;
         allocInfo.allocationSize = memReq.size;
         allocInfo.memoryTypeIndex = device.findMemoryType(memReq.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal);
