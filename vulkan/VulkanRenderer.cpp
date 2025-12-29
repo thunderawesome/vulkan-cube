@@ -65,7 +65,7 @@ void VulkanRenderer::initScene()
 
     sceneBuilder->createDemoScene(*scene);
 
-    // === Add Free-Fly Camera ===
+    // === Free-Fly Camera ===
     auto camera = std::make_unique<GameObject>(nullptr, nullptr); // No mesh or material
     camera->transform.position = glm::vec3(0.0f, 2.0f, 8.0f);     // Good starting view
     camera->updateFunc = Behaviors::freeCamera(window, 6.0f, 0.15f);

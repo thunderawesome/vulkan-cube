@@ -40,7 +40,7 @@ FetchContent_MakeAvailable(glfw)
 # STB Image (header-only for texture loading)
 # ------------------------------
 add_library(stb_image INTERFACE)
-target_include_directories(stb_image INTERFACE include)
+target_include_directories(stb_image INTERFACE include/stb)
 
 # ------------------------------
 # Find shader compiler: prefer glslc, fallback to glslangValidator
@@ -121,6 +121,10 @@ add_executable(vulkan_cube
     src/Renderer.cpp
     src/Scene.cpp
     src/SceneBuilder.cpp
+    src/Texture.cpp
+    src/VulkanUtils.cpp
+    src/AssetManager.cpp
+    include/stb/stb_image.cpp
 )
 
 target_link_libraries(vulkan_cube PRIVATE

@@ -25,8 +25,8 @@ public:
     const std::vector<vk::Framebuffer> &getFramebuffers() const { return swapChainFramebuffers; }
     vk::Framebuffer getFramebuffer(uint32_t index) const { return swapChainFramebuffers[index]; }
 
-    void recreate(vk::RenderPass renderPass);           // Self-contained recreation
-    void createFramebuffers(vk::RenderPass renderPass); // <-- Now public
+    void recreate(vk::RenderPass renderPass); // Self-contained recreation
+    void createFramebuffers(vk::RenderPass renderPass);
 
 private:
     void createSwapchain();

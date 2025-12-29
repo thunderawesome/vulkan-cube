@@ -1,5 +1,4 @@
 #include "VulkanDevice.h"
-
 #include <iostream>
 #include <set>
 
@@ -19,7 +18,6 @@ VulkanDevice::VulkanDevice(vk::Instance instance, vk::SurfaceKHR surface)
     }
 
     vk::PhysicalDeviceFeatures deviceFeatures{};
-
     vk::DeviceCreateInfo createInfo;
     createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
     createInfo.pQueueCreateInfos = queueCreateInfos.data();
@@ -28,8 +26,6 @@ VulkanDevice::VulkanDevice(vk::Instance instance, vk::SurfaceKHR surface)
     createInfo.pEnabledFeatures = &deviceFeatures;
 
     device = physicalDevice.createDevice(createInfo);
-
-    // VULKAN_HPP_DEFAULT_DISPATCHER.init(device); // Device-level function loading
 
     graphicsQueue = device.getQueue(queueIndices.graphicsFamily.value(), 0);
     presentQueue = device.getQueue(queueIndices.presentFamily.value(), 0);
@@ -57,7 +53,7 @@ void VulkanDevice::pickPhysicalDevice(vk::Instance instance, vk::SurfaceKHR surf
         if (indices.isComplete())
         {
             physicalDevice = dev;
-            queueIndices = indices; // Store only when we pick the device
+            queueIndices = indices;
             return;
         }
     }
@@ -65,11 +61,11 @@ void VulkanDevice::pickPhysicalDevice(vk::Instance instance, vk::SurfaceKHR surf
     throw std::runtime_error("failed to find a suitable GPU!");
 }
 
-QueueFamilyIndices VulkanDevice::findQueueFamilies(vk::PhysicalDevice device, vk::SurfaceKHR surface)
+QueueFamilyIndices VulkanDevice::findQueueFamilies(vk::PhysicalDevice dev, vk::SurfaceKHR surface)
 {
     QueueFamilyIndices indices;
 
-    auto queueFamilies = device.getQueueFamilyProperties();
+    auto queueFamilies = dev.getQueueFamilyProperties();
     uint32_t i = 0;
     for (const auto &queueFamily : queueFamilies)
     {
@@ -77,14 +73,33 @@ QueueFamilyIndices VulkanDevice::findQueueFamilies(vk::PhysicalDevice device, vk
         {
             indices.graphicsFamily = i;
         }
-        if (device.getSurfaceSupportKHR(i, surface))
+
+        if (dev.getSurfaceSupportKHR(i, surface))
         {
             indices.presentFamily = i;
         }
+
         if (indices.isComplete())
             break;
+
         ++i;
     }
 
     return indices;
+}
+
+uint32_t VulkanDevice::findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties) const
+{
+    vk::PhysicalDeviceMemoryProperties memProperties = physicalDevice.getMemoryProperties();
+
+    for (uint32_t i = 0; i < memProperties.memoryTypeCount; ++i)
+    {
+        if ((typeFilter & (1 << i)) &&
+            (memProperties.memoryTypes[i].propertyFlags & properties) == properties)
+        {
+            return i;
+        }
+    }
+
+    throw std::runtime_error("failed to find suitable memory type!");
 }

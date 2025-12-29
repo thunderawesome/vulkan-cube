@@ -15,7 +15,6 @@ void Renderer::batchAndRender(vk::CommandBuffer cmd,
                               const std::vector<GameObject *> &objects,
                               const RenderContext &context)
 {
-    // Group objects by material to minimize pipeline state switches
     std::unordered_map<Material *, std::vector<GameObject *>> batchedObjects;
 
     for (GameObject *obj : objects)
@@ -29,32 +28,35 @@ void Renderer::batchAndRender(vk::CommandBuffer cmd,
     for (auto &pair : batchedObjects)
     {
         Material *material = pair.first;
-        std::vector<GameObject *> &batch = pair.second;
+        const auto &batch = pair.second;
 
-        // Bind the pipeline once for the entire material batch
         cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, material->getPipeline());
+
+        vk::DescriptorSet descSet = material->getDescriptorSet();
+        cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+                               material->getLayout(),
+                               0, 1, &descSet, 0, nullptr);
 
         for (GameObject *obj : batch)
         {
             glm::mat4 modelMatrix = obj->transform.getMatrix();
 
-            // Assemble push constants from the provided context and object transform
             PushConstants constants;
             constants.mvp = context.proj * context.view * modelMatrix;
             constants.model = modelMatrix;
-            constants.viewPos = context.cameraPos;
-            constants.pad1 = 0.0f;
-            constants.lightPos = context.lightPos;
-            constants.pad2 = 0.0f;
 
-            // Push constants to the GPU
+            // Aligned view position
+            constants.viewPos = glm::vec4(context.cameraPos, 1.0f);
+
+            // Pack light position into xyz and mix factor into w
+            // 0.0f = Pure Texture, 1.0f = Full Vertex Color Tint
+            float colorMixFactor = 0.5f;
+            constants.lightData = glm::vec4(context.lightPos, colorMixFactor);
+
             cmd.pushConstants(material->getLayout(),
                               vk::ShaderStageFlagBits::eVertex,
-                              0,
-                              sizeof(PushConstants),
-                              &constants);
+                              0, sizeof(PushConstants), &constants);
 
-            // Bind mesh buffers and issue draw call
             obj->mesh->bind(cmd);
             obj->mesh->draw(cmd);
         }
