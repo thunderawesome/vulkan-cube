@@ -28,6 +28,7 @@ public:
     const QueueFamilyIndices &getQueueIndices() const { return queueIndices; }
     uint32_t getGraphicsQueueFamily() const { return queueIndices.graphicsFamily.value(); }
     uint32_t getPresentQueueFamily() const { return queueIndices.presentFamily.value(); }
+    uint32_t findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties) const;
 
 private:
     void pickPhysicalDevice(vk::Instance instance, vk::SurfaceKHR surface);

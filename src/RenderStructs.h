@@ -6,10 +6,8 @@ struct PushConstants
 {
     glm::mat4 mvp;      // 64 bytes
     glm::mat4 model;    // 64 bytes
-    glm::vec3 viewPos;  // 12 bytes
-    float pad1;         // 4 bytes
-    glm::vec3 lightPos; // 12 bytes
-    float pad2;         // 4 bytes
+    glm::vec4 viewPos;  // 16 bytes (Internal padding included)
+    glm::vec4 lightPos; // 16 bytes (Internal padding included)
 }; // Total: 160 bytes
 
 struct RenderContext

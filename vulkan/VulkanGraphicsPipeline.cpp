@@ -2,6 +2,7 @@
 #include "VulkanDevice.h"
 #include "VulkanRenderPass.h"
 #include "VulkanShader.h"
+#include "src/Renderer.h" // Ensure this is included to get the PushConstants struct
 #include <glm/mat4x4.hpp>
 
 VulkanGraphicsPipeline::VulkanGraphicsPipeline(
@@ -14,16 +15,32 @@ VulkanGraphicsPipeline::VulkanGraphicsPipeline(
     vk::CullModeFlags cullMode)
     : deviceRef(device)
 {
-    // Shader stages
-    vk::PipelineShaderStageCreateInfo vertStageInfo(
-        {}, vk::ShaderStageFlagBits::eVertex, shader.getVertexModule(), "main");
+    // 1. Create Descriptor Set Layout (Required for the texSampler in fragment shader)
+    vk::DescriptorSetLayoutBinding samplerLayoutBinding{};
+    samplerLayoutBinding.binding = 0;
+    samplerLayoutBinding.descriptorType = vk::DescriptorType::eCombinedImageSampler;
+    samplerLayoutBinding.descriptorCount = 1;
+    samplerLayoutBinding.stageFlags = vk::ShaderStageFlagBits::eFragment;
 
-    vk::PipelineShaderStageCreateInfo fragStageInfo(
-        {}, vk::ShaderStageFlagBits::eFragment, shader.getFragmentModule(), "main");
+    vk::DescriptorSetLayoutCreateInfo layoutInfo({}, 1, &samplerLayoutBinding);
+    descriptorSetLayout = deviceRef.getLogicalDevice().createDescriptorSetLayout(layoutInfo);
 
+    // 2. Define Push Constant Range
+    // Using sizeof(PushConstants) is safer than manual math
+    vk::PushConstantRange pushRange(
+        vk::ShaderStageFlagBits::eVertex,
+        0,
+        sizeof(PushConstants));
+
+    // 3. Create Pipeline Layout using the Descriptor Layout
+    vk::PipelineLayoutCreateInfo pipelineLayoutInfo({}, 1, &descriptorSetLayout, 1, &pushRange);
+    pipelineLayout = deviceRef.getLogicalDevice().createPipelineLayout(pipelineLayoutInfo);
+
+    // --- Standard Pipeline State Setup ---
+    vk::PipelineShaderStageCreateInfo vertStageInfo({}, vk::ShaderStageFlagBits::eVertex, shader.getVertexModule(), "main");
+    vk::PipelineShaderStageCreateInfo fragStageInfo({}, vk::ShaderStageFlagBits::eFragment, shader.getFragmentModule(), "main");
     vk::PipelineShaderStageCreateInfo shaderStages[] = {vertStageInfo, fragStageInfo};
 
-    // Vertex input — either use provided binding/attributes or fall back to empty (triangle shader)
     vk::PipelineVertexInputStateCreateInfo vertexInputInfo;
     if (bindingDesc && attributeCount > 0 && attributeDesc)
     {
@@ -36,90 +53,46 @@ VulkanGraphicsPipeline::VulkanGraphicsPipeline(
 
     vk::PipelineInputAssemblyStateCreateInfo inputAssembly({}, vk::PrimitiveTopology::eTriangleList, false);
 
-    // Dynamic viewport and scissor (set at draw time)
     vk::DynamicState dynamicStates[] = {vk::DynamicState::eViewport, vk::DynamicState::eScissor};
     vk::PipelineDynamicStateCreateInfo dynamicStateInfo({}, 2, dynamicStates);
-
     vk::PipelineViewportStateCreateInfo viewportState({}, 1, nullptr, 1, nullptr);
 
     vk::PipelineRasterizationStateCreateInfo rasterizer(
-        {},
-        false, // depthClampEnable
-        false, // rasterizerDiscardEnable
-        vk::PolygonMode::eFill,
-        cullMode,
-        vk::FrontFace::eCounterClockwise,
-        false, 0.0f, 0.0f, 0.0f, 1.0f);
+        {}, false, false, vk::PolygonMode::eFill, cullMode,
+        vk::FrontFace::eCounterClockwise, false, 0.0f, 0.0f, 0.0f, 1.0f);
 
     vk::PipelineMultisampleStateCreateInfo multisampling({}, vk::SampleCountFlagBits::e1, false);
 
-    // Enable depth testing
     vk::PipelineDepthStencilStateCreateInfo depthStencil(
-        {},
-        true,                 // depthTestEnable
-        true,                 // depthWriteEnable
-        vk::CompareOp::eLess, // depthCompareOp
-        false,                // depthBoundsTestEnable
-        false,                // stencilTestEnable
-        {},                   // front
-        {},                   // back
-        0.0f,                 // minDepthBounds
-        1.0f                  // maxDepthBounds
-    );
+        {}, true, true, vk::CompareOp::eLess, false, false, {}, {}, 0.0f, 1.0f);
 
     vk::PipelineColorBlendAttachmentState colorBlendAttachment;
-    colorBlendAttachment.colorWriteMask = vk::ColorComponentFlagBits::eR |
-                                          vk::ColorComponentFlagBits::eG |
-                                          vk::ColorComponentFlagBits::eB |
-                                          vk::ColorComponentFlagBits::eA;
+    colorBlendAttachment.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
+                                          vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
     colorBlendAttachment.blendEnable = false;
-
     vk::PipelineColorBlendStateCreateInfo colorBlending({}, false, vk::LogicOp::eCopy, 1, &colorBlendAttachment);
 
-    // Pipeline layout with push constants for MVP matrix
-    // 64 (MVP) + 64 (Model) + 16 (ViewPos) + 16 (LightPos) = 160 bytes
-    vk::PushConstantRange pushRange(
-        vk::ShaderStageFlagBits::eVertex,
-        0,
-        static_cast<uint32_t>(sizeof(glm::mat4) * 2 + sizeof(glm::vec4) * 2));
-    vk::PipelineLayoutCreateInfo pipelineLayoutInfo({}, 0, nullptr, 1, &pushRange);
-    pipelineLayout = deviceRef.getLogicalDevice().createPipelineLayout(pipelineLayoutInfo);
-
-    // Graphics pipeline
+    // 4. Create the Graphics Pipeline
     vk::GraphicsPipelineCreateInfo pipelineInfo(
-        {},
-        2, shaderStages,
-        &vertexInputInfo,
-        &inputAssembly,
-        nullptr, // tesselation
-        &viewportState,
-        &rasterizer,
-        &multisampling,
-        &depthStencil,
-        &colorBlending,
-        &dynamicStateInfo,
-        pipelineLayout,
-        renderPass.get(),
-        0 // subpass
-    );
+        {}, 2, shaderStages, &vertexInputInfo, &inputAssembly, nullptr,
+        &viewportState, &rasterizer, &multisampling, &depthStencil,
+        &colorBlending, &dynamicStateInfo, pipelineLayout, renderPass.get(), 0);
 
     auto result = deviceRef.getLogicalDevice().createGraphicsPipeline(nullptr, pipelineInfo);
     if (result.result != vk::Result::eSuccess)
     {
         throw std::runtime_error("failed to create graphics pipeline!");
     }
-
     graphicsPipeline = result.value;
 }
 
 VulkanGraphicsPipeline::~VulkanGraphicsPipeline()
 {
+    auto device = deviceRef.getLogicalDevice();
     if (graphicsPipeline)
-    {
-        deviceRef.getLogicalDevice().destroyPipeline(graphicsPipeline);
-    }
+        device.destroyPipeline(graphicsPipeline);
     if (pipelineLayout)
-    {
-        deviceRef.getLogicalDevice().destroyPipelineLayout(pipelineLayout);
-    }
+        device.destroyPipelineLayout(pipelineLayout);
+    if (descriptorSetLayout)
+        device.destroyDescriptorSetLayout(descriptorSetLayout); // Clean up layout!
 }

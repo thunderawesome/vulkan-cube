@@ -1,13 +1,13 @@
 #pragma once
-
 #include <memory>
 #include <vector>
 
 class VulkanDevice;
 class VulkanRenderPass;
 class Scene;
-class Mesh; // Forward declarations only
+class Mesh;
 class Material;
+class AssetManager;
 
 class SceneBuilder
 {
@@ -23,6 +23,8 @@ public:
 private:
     const VulkanDevice &deviceRef;
     const VulkanRenderPass &renderPassRef;
+
+    std::unique_ptr<AssetManager> assetManager;
 
     std::vector<std::unique_ptr<Mesh>> meshes;
     std::vector<std::unique_ptr<Material>> materials;
