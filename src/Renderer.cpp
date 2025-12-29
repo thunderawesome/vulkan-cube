@@ -28,6 +28,13 @@ void Renderer::batchAndRender(vk::CommandBuffer cmd,
         }
     }
 
+    // Define a local struct to match the shader's push constant layout
+    struct PushConstants
+    {
+        glm::mat4 mvp;
+        glm::mat4 model;
+    };
+
     // Render each batch
     for (auto &pair : batchedObjects)
     {
@@ -41,11 +48,17 @@ void Renderer::batchAndRender(vk::CommandBuffer cmd,
         for (GameObject *obj : batch)
         {
             glm::mat4 model = obj->transform.getMatrix();
-            glm::mat4 mvp = proj * view * model;
 
+            PushConstants constants;
+            constants.model = model;
+            constants.mvp = proj * view * model;
+
+            // Pass the full 128-byte struct (2 matrices) to the shader
             cmd.pushConstants(material->getLayout(),
                               vk::ShaderStageFlagBits::eVertex,
-                              0, sizeof(glm::mat4), &mvp);
+                              0,
+                              sizeof(PushConstants),
+                              &constants);
 
             obj->mesh->bind(cmd);
             obj->mesh->draw(cmd);

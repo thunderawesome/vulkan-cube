@@ -77,7 +77,11 @@ VulkanGraphicsPipeline::VulkanGraphicsPipeline(
     vk::PipelineColorBlendStateCreateInfo colorBlending({}, false, vk::LogicOp::eCopy, 1, &colorBlendAttachment);
 
     // Pipeline layout (no descriptor sets yet). Add a push-constant range for a 4x4 matrix (mat4 = 16 floats).
-    vk::PushConstantRange pushRange(vk::ShaderStageFlagBits::eVertex, 0, static_cast<uint32_t>(sizeof(glm::mat4)));
+    vk::PushConstantRange pushRange(
+        vk::ShaderStageFlagBits::eVertex,
+        0,
+        static_cast<uint32_t>(sizeof(glm::mat4) * 2));
+
     vk::PipelineLayoutCreateInfo pipelineLayoutInfo({}, 0, nullptr, 1, &pushRange);
     pipelineLayout = deviceRef.getLogicalDevice().createPipelineLayout(pipelineLayoutInfo);
 

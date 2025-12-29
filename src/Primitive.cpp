@@ -44,10 +44,22 @@ namespace Primitives
             // top face (facing +Y)
             3, 7, 6, 6, 2, 3};
 
+        // Normals for each of the 6 faces
+        std::array<glm::vec3, 6> faceNormals = {
+            glm::vec3(0.0f, 0.0f, -1.0f), // back
+            glm::vec3(0.0f, 0.0f, 1.0f),  // front
+            glm::vec3(-1.0f, 0.0f, 0.0f), // left
+            glm::vec3(1.0f, 0.0f, 0.0f),  // right
+            glm::vec3(0.0f, -1.0f, 0.0f), // bottom
+            glm::vec3(0.0f, 1.0f, 0.0f)   // top
+        };
+
         for (size_t i = 0; i < 36; ++i)
         {
             uint32_t idx = idxs[i];
-            verts.push_back({positions[idx], colors[idx]});
+            // Every 6 vertices belong to one face, so we select the normal based on i / 6
+            glm::vec3 normal = faceNormals[i / 6];
+            verts.push_back({positions[idx], colors[idx], normal});
         }
 
         return verts;
@@ -55,10 +67,11 @@ namespace Primitives
 
     std::vector<Vertex> createTriangle()
     {
+        // For a single triangle on the XY plane, the normal points toward +Z
+        glm::vec3 normal = {0.0f, 0.0f, 1.0f};
         return {
-            {{0.0f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}}, // red
-            {{0.5f, 0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}},  // green
-            {{-0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}}  // blue
-        };
+            {{0.0f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, normal},
+            {{0.5f, 0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, normal},
+            {{-0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, normal}};
     }
 }
