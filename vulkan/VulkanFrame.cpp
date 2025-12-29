@@ -6,6 +6,7 @@
 #include "VulkanSync.h"
 #include "src/Renderer.h"
 #include "src/Scene.h"
+#include "src/GameObject.h"
 #include <array>
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -28,11 +29,7 @@ VulkanFrame::VulkanFrame(const VulkanDevice &device,
     if (ext.height > 0)
         targetAspect = static_cast<float>(ext.width) / static_cast<float>(ext.height);
 
-    // Setup default camera
-    viewMatrix = glm::lookAt(glm::vec3(3.0f, 3.0f, 3.0f),
-                             glm::vec3(0.0f),
-                             glm::vec3(0.0f, 1.0f, 0.0f));
-
+    // Initial projection matrix (will be updated on resize)
     projMatrix = glm::perspective(glm::radians(45.0f), targetAspect, 0.1f, 100.0f);
     projMatrix[1][1] *= -1; // Flip Y for Vulkan
 }
@@ -43,7 +40,6 @@ void VulkanFrame::updateTargetAspect()
     if (ext.height > 0)
     {
         targetAspect = static_cast<float>(ext.width) / static_cast<float>(ext.height);
-        // Update projection matrix with new aspect
         projMatrix = glm::perspective(glm::radians(45.0f), targetAspect, 0.1f, 100.0f);
         projMatrix[1][1] *= -1;
     }
@@ -58,6 +54,7 @@ void VulkanFrame::setupViewportAndScissor(vk::CommandBuffer cmd)
 
     float vpW = curW;
     float vpH = curH;
+
     if (curAspect > targetAspect)
     {
         vpW = targetAspect * curH;
@@ -81,6 +78,34 @@ void VulkanFrame::setupViewportAndScissor(vk::CommandBuffer cmd)
     cmd.setScissor(0, 1, &scissor);
 }
 
+glm::mat4 VulkanFrame::getCameraViewMatrix(const Scene &scene) const
+{
+    for (const auto *obj : scene.getActiveGameObjects())
+    {
+        // Camera is the object with no mesh
+        if (obj->mesh == nullptr)
+        {
+            const Transform &t = obj->transform;
+
+            float pitchRad = glm::radians(t.rotation.x);
+            float yawRad = glm::radians(t.rotation.y);
+
+            glm::vec3 front;
+            front.x = cos(yawRad) * cos(pitchRad);
+            front.y = sin(pitchRad);
+            front.z = sin(yawRad) * cos(pitchRad);
+            front = glm::normalize(front);
+
+            return glm::lookAt(t.position, t.position + front, glm::vec3(0.0f, 1.0f, 0.0f));
+        }
+    }
+
+    // Fallback if no camera found
+    return glm::lookAt(glm::vec3(0.0f, 2.0f, 8.0f),
+                       glm::vec3(0.0f, 0.0f, 0.0f),
+                       glm::vec3(0.0f, 1.0f, 0.0f));
+}
+
 FrameResult VulkanFrame::draw(uint32_t &currentFrame, const Scene &scene)
 {
     // Wait for fence
@@ -90,7 +115,6 @@ FrameResult VulkanFrame::draw(uint32_t &currentFrame, const Scene &scene)
     // Acquire next image
     uint32_t imageIndex;
     vk::Result result;
-
     try
     {
         result = deviceRef.getLogicalDevice().acquireNextImageKHR(
@@ -109,7 +133,6 @@ FrameResult VulkanFrame::draw(uint32_t &currentFrame, const Scene &scene)
     {
         return FrameResult::SwapchainOutOfDate;
     }
-
     if (result != vk::Result::eSuccess)
     {
         throw std::runtime_error("failed to acquire swap chain image!");
@@ -127,7 +150,7 @@ FrameResult VulkanFrame::draw(uint32_t &currentFrame, const Scene &scene)
 
     // Begin render pass
     std::array<vk::ClearValue, 2> clearValues{};
-    clearValues[0].color = vk::ClearColorValue(std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f});
+    clearValues[0].color = vk::ClearColorValue(std::array<float, 4>{0.01f, 0.01f, 0.02f, 1.0f}); // Nice dark blue background
     clearValues[1].depthStencil = vk::ClearDepthStencilValue(1.0f, 0);
 
     vk::RenderPassBeginInfo renderPassInfo{};
@@ -143,9 +166,12 @@ FrameResult VulkanFrame::draw(uint32_t &currentFrame, const Scene &scene)
     // Setup viewport and scissor
     setupViewportAndScissor(cmd);
 
-    // Render scene
+    // === Dynamic Camera View Matrix ===
+    glm::mat4 view = getCameraViewMatrix(scene);
+
+    // Render scene with updated view
     auto activeObjects = scene.getActiveGameObjects();
-    rendererRef.renderObjects(cmd, activeObjects, viewMatrix, projMatrix);
+    rendererRef.renderObjects(cmd, activeObjects, view, projMatrix);
 
     cmd.endRenderPass();
     cmd.end();
@@ -153,7 +179,6 @@ FrameResult VulkanFrame::draw(uint32_t &currentFrame, const Scene &scene)
     // Submit
     vk::Semaphore waitSemaphores[] = {syncRef.getImageAvailableSemaphore(currentFrame)};
     vk::PipelineStageFlags waitStages[] = {vk::PipelineStageFlagBits::eColorAttachmentOutput};
-
     vk::SubmitInfo submitInfo{};
     submitInfo.waitSemaphoreCount = 1;
     submitInfo.pWaitSemaphores = waitSemaphores;
@@ -169,7 +194,6 @@ FrameResult VulkanFrame::draw(uint32_t &currentFrame, const Scene &scene)
 
     // Present
     vk::SwapchainKHR currentSwapchain = swapchainRef.getSwapchain();
-
     vk::PresentInfoKHR presentInfo{};
     presentInfo.waitSemaphoreCount = 1;
     presentInfo.pWaitSemaphores = signalSemaphores;

@@ -1,4 +1,5 @@
 #pragma once
+
 #include <vulkan/vulkan.hpp>
 #include <glm/glm.hpp>
 
@@ -27,17 +28,8 @@ public:
                 Renderer &renderer,
                 uint32_t maxFramesInFlight);
 
-    // Main draw function
     FrameResult draw(uint32_t &currentFrame, const Scene &scene);
-
-    // Update target aspect ratio after swapchain recreation
     void updateTargetAspect();
-
-    // Camera control
-    void setView(const glm::mat4 &view) { viewMatrix = view; }
-    void setProjection(const glm::mat4 &proj) { projMatrix = proj; }
-    const glm::mat4 &getView() const { return viewMatrix; }
-    const glm::mat4 &getProjection() const { return projMatrix; }
 
 private:
     const VulkanDevice &deviceRef;
@@ -54,4 +46,5 @@ private:
     glm::mat4 projMatrix = glm::mat4(1.0f);
 
     void setupViewportAndScissor(vk::CommandBuffer cmd);
+    glm::mat4 getCameraViewMatrix(const Scene &scene) const;
 };

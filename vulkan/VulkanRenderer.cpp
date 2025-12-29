@@ -5,6 +5,7 @@
 #include "src/Scene.h"
 #include "src/SceneBuilder.h"
 #include "src/Renderer.h"
+#include "src/FreeCamera.h"
 
 #include <iostream>
 #include <cstdlib>
@@ -59,12 +60,17 @@ void VulkanRenderer::initVulkan()
 
 void VulkanRenderer::initScene()
 {
-    // Create scene and populate it
     scene = std::make_unique<Scene>();
     sceneBuilder = std::make_unique<SceneBuilder>(*vulkanDevice, *vulkanRenderPass);
 
-    // Build the demo scene
     sceneBuilder->createDemoScene(*scene);
+
+    // === Add Free-Fly Camera ===
+    auto camera = std::make_unique<GameObject>(nullptr, nullptr); // No mesh or material
+    camera->transform.position = glm::vec3(0.0f, 2.0f, 8.0f);     // Good starting view
+    camera->updateFunc = Behaviors::freeCamera(window, 6.0f, 0.15f);
+
+    scene->addGameObject(std::move(camera));
 }
 
 void VulkanRenderer::mainLoop()
