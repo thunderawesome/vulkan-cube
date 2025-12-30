@@ -73,82 +73,68 @@ void VulkanRenderer::initScene()
     scene->addGameObject(std::move(camera));
 }
 
+void VulkanRenderer::handleInput()
+{
+    if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+    {
+        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+        glfwSetWindowShouldClose(window, GLFW_TRUE);
+    }
+}
+
 void VulkanRenderer::mainLoop()
 {
+    // Determine if we are in stress mode
     const char *stressEnv = std::getenv("STRESS_FRAMES");
+    uint64_t targetFrames = 0;
+    bool isStressTest = false;
+
     if (stressEnv)
     {
-        uint64_t targetFrames = 0;
         try
         {
             targetFrames = std::stoull(std::string(stressEnv));
+            isStressTest = true;
         }
         catch (...)
         {
-            targetFrames = 0;
-        }
-
-        uint64_t frames = 0;
-        while (frames < targetFrames && !glfwWindowShouldClose(window))
-        {
-            glfwPollEvents();
-
-            // === ESC to exit early (even in stress mode) ===
-            if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
-            {
-                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL); // Release mouse
-                glfwSetWindowShouldClose(window, GLFW_TRUE);
-                break;
-            }
-
-            // Calculate delta time
-            auto currentTime = std::chrono::steady_clock::now();
-            float deltaTime = std::chrono::duration<float>(currentTime - lastFrameTime).count();
-            lastFrameTime = currentTime;
-
-            // Update scene
-            scene->update(deltaTime);
-
-            // Draw frame
-            auto result = vulkanFrame->draw(currentFrame, *scene);
-            if (result == FrameResult::SwapchainOutOfDate)
-            {
-                vulkanSwapchain->recreate(vulkanRenderPass->get());
-                vulkanFrame->updateTargetAspect();
-            }
-
-            ++frames;
         }
     }
-    else
+
+    uint64_t frameCount = 0;
+
+    while (!glfwWindowShouldClose(window))
     {
-        while (!glfwWindowShouldClose(window))
+        // Exit if we've hit the stress test limit
+        if (isStressTest && frameCount >= targetFrames)
+            break;
+
+        glfwPollEvents();
+        handleInput(); // Centralized ESC check
+
+        // Calculate delta time
+        auto currentTime = std::chrono::steady_clock::now();
+        float deltaTime = std::chrono::duration<float>(currentTime - lastFrameTime).count();
+        lastFrameTime = currentTime;
+
+        // Update scene logic (Physics, Camera, etc.)
+        scene->update(deltaTime);
+
+        // Render the frame
+        auto result = vulkanFrame->draw(currentFrame, *scene);
+
+        if (result == FrameResult::SwapchainOutOfDate)
         {
-            glfwPollEvents();
-
-            // === ESC to exit gracefully ===
-            if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
-            {
-                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL); // Release mouse
-                glfwSetWindowShouldClose(window, GLFW_TRUE);
-            }
-
-            // Calculate delta time
-            auto currentTime = std::chrono::steady_clock::now();
-            float deltaTime = std::chrono::duration<float>(currentTime - lastFrameTime).count();
-            lastFrameTime = currentTime;
-
-            // Update scene
-            scene->update(deltaTime);
-
-            // Draw frame
-            auto result = vulkanFrame->draw(currentFrame, *scene);
-            if (result == FrameResult::SwapchainOutOfDate)
-            {
-                vulkanSwapchain->recreate(vulkanRenderPass->get());
-                vulkanFrame->updateTargetAspect();
-            }
+            vulkanSwapchain->recreate(vulkanRenderPass->get());
+            vulkanFrame->updateTargetAspect();
         }
+        else
+        {
+            // IMPORTANT: Increment frame index for synchronization primitives
+            currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
+        }
+
+        frameCount++;
     }
 
     vulkanDevice->getLogicalDevice().waitIdle();
