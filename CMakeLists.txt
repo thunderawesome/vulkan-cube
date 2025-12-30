@@ -26,11 +26,20 @@ add_library(stb_image INTERFACE)
 target_include_directories(stb_image INTERFACE include/stb)
 
 # ------------------------------
-# Shader Compiler
+# Shader Compiler Discovery
 # ------------------------------
+# Try to find glslc first, then fallback to glslangValidator (common on macOS/Homebrew)
 find_program(GLSLC glslc HINTS $ENV{VULKAN_SDK}/Bin $ENV{VULKAN_SDK}/bin)
-if(NOT GLSLC)
-    message(FATAL_ERROR "glslc not found! Required to compile shaders for embedding.")
+find_program(GLSLANG_VALIDATOR glslangValidator HINTS $ENV{VULKAN_SDK}/Bin $ENV{VULKAN_SDK}/bin)
+
+if(GLSLC)
+    set(SHADER_COMPILER_BIN ${GLSLC})
+    message(STATUS "Using glslc for shader embedding")
+elseif(GLSLANG_VALIDATOR)
+    set(SHADER_COMPILER_BIN ${GLSLANG_VALIDATOR})
+    message(STATUS "Using glslangValidator for shader embedding")
+else()
+    message(FATAL_ERROR "No shader compiler (glslc or glslangValidator) found! Required for embedding.")
 endif()
 
 # ------------------------------
@@ -72,7 +81,7 @@ set(EMBEDDED_SHADERS_HEADER ${CMAKE_BINARY_DIR}/shaders_embedded.h)
 add_custom_command(
     OUTPUT ${EMBEDDED_SHADERS_HEADER}
     COMMAND ${CMAKE_COMMAND}
-        -D GLSLC_PATH=${GLSLC}
+        -D GLSLC_PATH=${SHADER_COMPILER_BIN}
         -D INPUT_VERT=${CMAKE_CURRENT_SOURCE_DIR}/shaders/cube.vert
         -D INPUT_FRAG=${CMAKE_CURRENT_SOURCE_DIR}/shaders/cube.frag
         -D OUTPUT_HEADER=${EMBEDDED_SHADERS_HEADER}

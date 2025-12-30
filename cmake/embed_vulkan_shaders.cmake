@@ -1,18 +1,30 @@
-# Compile to temporary SPV files
-execute_process(COMMAND ${GLSLC_PATH} ${INPUT_VERT} -o ${INPUT_VERT}.spv)
-execute_process(COMMAND ${GLSLC_PATH} ${INPUT_FRAG} -o ${INPUT_FRAG}.spv)
+# Determine which compiler and flags to use
+if(GLSLC_PATH MATCHES "glslc")
+    set(COMPILE_COMMAND ${GLSLC_PATH} ${INPUT_VERT} -o ${INPUT_VERT}.spv)
+    set(COMPILE_COMMAND_FRAG ${GLSLC_PATH} ${INPUT_FRAG} -o ${INPUT_FRAG}.spv)
+else()
+    # Fallback for glslangValidator (requires -V to output SPIR-V)
+    set(COMPILE_COMMAND ${GLSLC_PATH} -V ${INPUT_VERT} -o ${INPUT_VERT}.spv)
+    set(COMPILE_COMMAND_FRAG ${GLSLC_PATH} -V ${INPUT_FRAG} -o ${INPUT_FRAG}.spv)
+endif()
 
-# Read as HEX but specifically as 4-byte words to preserve endianness
+# Execute compilation
+execute_process(COMMAND ${COMPILE_COMMAND} RESULT_VARIABLE RES1)
+execute_process(COMMAND ${COMPILE_COMMAND_FRAG} RESULT_VARIABLE RES2)
+
+if(NOT RES1 EQUAL 0 OR NOT RES2 EQUAL 0)
+    message(FATAL_ERROR "Shader compilation failed")
+endif()
+
+# Read as HEX
 file(READ "${INPUT_VERT}.spv" VERT_HEX HEX)
 file(READ "${INPUT_FRAG}.spv" FRAG_HEX HEX)
 
 function(format_to_uint32_array HEX_DATA OUT_VAR)
-    # Split the long hex string into 8-character chunks (4 bytes = uint32)
     string(REGEX MATCHALL "........" CHUNKS "${HEX_DATA}")
     set(FORMATTED "")
     foreach(CHUNK ${CHUNKS})
-        # Vulkan/SPIR-V is stored in a specific byte order. 
-        # We need to flip the bytes in the chunk to make them valid C++ uint32 literals
+        # Handle Little Endian swap
         string(SUBSTRING ${CHUNK} 6 2 B1)
         string(SUBSTRING ${CHUNK} 4 2 B2)
         string(SUBSTRING ${CHUNK} 2 2 B3)
