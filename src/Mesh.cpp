@@ -1,5 +1,5 @@
 #include "Mesh.h"
-#include "vulkan/VulkanDevice.h"
+#include "../vulkan/VulkanDevice.h"
 #include "VulkanUtils.h"
 
 #include <cstring>

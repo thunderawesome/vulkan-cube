@@ -2,10 +2,10 @@
 #include <GLFW/glfw3.h>
 
 #include "VulkanRenderer.h"
-#include "src/Scene.h"
-#include "src/SceneBuilder.h"
-#include "src/Renderer.h"
-#include "src/FreeCamera.h"
+#include "../src/Scene.h"
+#include "../src/SceneBuilder.h"
+#include "../src/Renderer.h"
+#include "../src/FreeCamera.h"
 
 #include <iostream>
 #include <cstdlib>
@@ -161,16 +161,26 @@ void VulkanRenderer::cleanup()
 
     vulkanDevice->getLogicalDevice().waitIdle();
 
-    // Clean up in reverse order of dependencies
+    // 1. Destroy high-level scene objects first
     scene.reset();
-    sceneBuilder.reset(); // This owns meshes and materials
+    sceneBuilder.reset();
     renderer.reset();
+
+    // 2. Destroy per-frame resources and commands
     vulkanFrame.reset();
     vulkanSync.reset();
     vulkanCommand.reset();
+
+    // 3. Destroy Rendering State
     vulkanRenderPass.reset();
+
+    // 4. IMPORTANT: Destroy Swapchain BEFORE Surface
     vulkanSwapchain.reset();
+
+    // 5. Destroy Surface BEFORE Device/Instance
     vulkanSurface.reset();
+
+    // 6. Finally, destroy core Vulkan handles
     vulkanDevice.reset();
     vulkanInstance.reset();
 }

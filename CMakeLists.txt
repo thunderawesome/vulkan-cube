@@ -8,96 +8,30 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 include(FetchContent)
 
 # ------------------------------
-# Vulkan (system package)
+# Dependencies
 # ------------------------------
 find_package(Vulkan REQUIRED)
 
-# ------------------------------
-# GLM (header-only math library)
-# ------------------------------
-FetchContent_Declare(
-    glm
-    GIT_REPOSITORY https://github.com/g-truc/glm.git
-    GIT_TAG 1.0.2
-)
+FetchContent_Declare(glm GIT_REPOSITORY https://github.com/g-truc/glm.git GIT_TAG 1.0.2)
 FetchContent_MakeAvailable(glm)
 
-# ------------------------------
-# GLFW (window and input)
-# ------------------------------
-FetchContent_Declare(
-    glfw
-    GIT_REPOSITORY https://github.com/glfw/glfw.git
-    GIT_TAG 3.4
-)
+FetchContent_Declare(glfw GIT_REPOSITORY https://github.com/glfw/glfw.git GIT_TAG 3.4)
 set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(GLFW_INSTALL OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(glfw)
 
-# ------------------------------
-# STB Image (header-only for texture loading)
-# ------------------------------
 add_library(stb_image INTERFACE)
 target_include_directories(stb_image INTERFACE include/stb)
 
 # ------------------------------
-# Find shader compiler: prefer glslc, fallback to glslangValidator
+# Shader Compiler
 # ------------------------------
 find_program(GLSLC glslc HINTS $ENV{VULKAN_SDK}/Bin $ENV{VULKAN_SDK}/bin)
-find_program(GLSLANG_VALIDATOR glslangValidator)
-
-if(GLSLC)
-    set(SHADER_COMPILER ${GLSLC})
-    set(SHADER_COMPILER_FLAGS "")
-    message(STATUS "Using glslc for shader compilation")
-elseif(GLSLANG_VALIDATOR)
-    set(SHADER_COMPILER ${GLSLANG_VALIDATOR})
-    set(SHADER_COMPILER_FLAGS -V)  # Enable Vulkan semantics and SPIR-V output
-    message(STATUS "Using glslangValidator as fallback for shader compilation")
-else()
-    message(FATAL_ERROR "No GLSL-to-SPIR-V compiler found! Install either glslc (Vulkan SDK) or glslangValidator.")
+if(NOT GLSLC)
+    message(FATAL_ERROR "glslc not found! Required to compile shaders for embedding.")
 endif()
-
-# ------------------------------
-# Helper function to compile shaders to SPIR-V
-# ------------------------------
-function(add_spv_shader TARGET SHADER_FILE OUTPUT_SPV)
-    # Determine shader stage from file extension for glslangValidator
-    get_filename_component(SHADER_EXT ${SHADER_FILE} EXT)
-
-    set(STAGE_FLAG "")
-    if(SHADER_COMPILER STREQUAL ${GLSLANG_VALIDATOR})
-        if(SHADER_EXT STREQUAL ".vert")
-            set(STAGE_FLAG -S vert)
-        elseif(SHADER_EXT STREQUAL ".frag")
-            set(STAGE_FLAG -S frag)
-        elseif(SHADER_EXT STREQUAL ".comp")
-            set(STAGE_FLAG -S comp)
-        elseif(SHADER_EXT STREQUAL ".geom")
-            set(STAGE_FLAG -S geom)
-        elseif(SHADER_EXT STREQUAL ".tesc")
-            set(STAGE_FLAG -S tesc)
-        elseif(SHADER_EXT STREQUAL ".tese")
-            set(STAGE_FLAG -S tese)
-        # Add more stages if needed
-        endif()
-    endif()
-
-    add_custom_command(
-        OUTPUT ${CMAKE_BINARY_DIR}/${OUTPUT_SPV}
-        COMMAND ${SHADER_COMPILER} ${SHADER_COMPILER_FLAGS} ${STAGE_FLAG}
-                ${CMAKE_CURRENT_SOURCE_DIR}/${SHADER_FILE}
-                -o ${CMAKE_BINARY_DIR}/${OUTPUT_SPV}
-        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/${SHADER_FILE}
-        COMMENT "Compiling shader ${SHADER_FILE} to SPIR-V"
-    )
-    target_sources(${TARGET} PRIVATE ${CMAKE_BINARY_DIR}/${OUTPUT_SPV})
-endfunction()
-
-# Ensure the shaders output directory exists in the build tree
-file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/shaders)
 
 # ------------------------------
 # Executable
@@ -127,36 +61,48 @@ add_executable(vulkan_cube
     include/stb/stb_image.cpp
 )
 
-target_link_libraries(vulkan_cube PRIVATE
-    Vulkan::Vulkan
-    glfw
-    glm::glm
-    stb_image
-)
-
-target_include_directories(vulkan_cube PRIVATE
-    include
-    ${CMAKE_BINARY_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/vulkan
-    ${glfw_SOURCE_DIR}/include
-)
+target_link_libraries(vulkan_cube PRIVATE Vulkan::Vulkan glfw glm::glm stb_image)
+target_include_directories(vulkan_cube PRIVATE include ${CMAKE_BINARY_DIR})
 
 # ------------------------------
-# Precompile shaders to SPIR-V
+# Embed Shaders (Compile to SPV then Hex)
 # ------------------------------
-add_spv_shader(vulkan_cube shaders/triangle.vert shaders/triangle.vert.spv)
-add_spv_shader(vulkan_cube shaders/triangle.frag shaders/triangle.frag.spv)
-add_spv_shader(vulkan_cube shaders/cube.vert    shaders/cube.vert.spv)
-add_spv_shader(vulkan_cube shaders/cube.frag    shaders/cube.frag.spv)
+set(EMBEDDED_SHADERS_HEADER ${CMAKE_BINARY_DIR}/shaders_embedded.h)
 
-# ------------------------------
-# Copy texture for runtime override (modding support)
-# ------------------------------
 add_custom_command(
-    TARGET vulkan_cube POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/container.jpg
-        $<TARGET_FILE_DIR:vulkan_cube>/container.jpg
-    COMMENT "Copying container.jpg to output directory"
+    OUTPUT ${EMBEDDED_SHADERS_HEADER}
+    COMMAND ${CMAKE_COMMAND}
+        -D GLSLC_PATH=${GLSLC}
+        -D INPUT_VERT=${CMAKE_CURRENT_SOURCE_DIR}/shaders/cube.vert
+        -D INPUT_FRAG=${CMAKE_CURRENT_SOURCE_DIR}/shaders/cube.frag
+        -D OUTPUT_HEADER=${EMBEDDED_SHADERS_HEADER}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_vulkan_shaders.cmake
+    DEPENDS
+        ${CMAKE_CURRENT_SOURCE_DIR}/shaders/cube.vert
+        ${CMAKE_CURRENT_SOURCE_DIR}/shaders/cube.frag
+        ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_vulkan_shaders.cmake
+    COMMENT "Compiling and embedding Vulkan shaders"
 )
+
+add_custom_target(embed_shaders DEPENDS ${EMBEDDED_SHADERS_HEADER})
+add_dependencies(vulkan_cube embed_shaders)
+
+# ------------------------------
+# Embed Texture (container.jpg)
+# ------------------------------
+set(EMBEDDED_TEXTURE_HEADER ${CMAKE_BINARY_DIR}/embedded_texture.h)
+
+add_custom_command(
+    OUTPUT ${EMBEDDED_TEXTURE_HEADER}
+    COMMAND ${CMAKE_COMMAND}
+        -D INPUT_TEXTURE=${CMAKE_CURRENT_SOURCE_DIR}/container.jpg
+        -D OUTPUT_HEADER=${EMBEDDED_TEXTURE_HEADER}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_texture.cmake
+    DEPENDS
+        ${CMAKE_CURRENT_SOURCE_DIR}/container.jpg
+        ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_texture.cmake
+    COMMENT "Embedding texture into byte array"
+)
+
+add_custom_target(embed_texture DEPENDS ${EMBEDDED_TEXTURE_HEADER})
+add_dependencies(vulkan_cube embed_texture)
