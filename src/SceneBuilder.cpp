@@ -5,9 +5,9 @@
 #include "Mesh.h"
 #include "Material.h"
 #include "Primitive.h"
-#include "VulkanShader.h"
-#include "VulkanDevice.h"
-#include "VulkanRenderPass.h"
+#include "../vulkan/VulkanShader.h"
+#include "../vulkan/VulkanDevice.h"
+#include "../vulkan/VulkanRenderPass.h"
 #include "AssetManager.h"
 
 SceneBuilder::~SceneBuilder() = default;

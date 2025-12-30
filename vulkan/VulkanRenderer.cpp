@@ -2,10 +2,10 @@
 #include <GLFW/glfw3.h>
 
 #include "VulkanRenderer.h"
-#include "src/Scene.h"
-#include "src/SceneBuilder.h"
-#include "src/Renderer.h"
-#include "src/FreeCamera.h"
+#include "../src/Scene.h"
+#include "../src/SceneBuilder.h"
+#include "../src/Renderer.h"
+#include "../src/FreeCamera.h"
 
 #include <iostream>
 #include <cstdlib>
@@ -159,18 +159,41 @@ void VulkanRenderer::cleanup()
     if (!vulkanDevice)
         return;
 
+    // Wait for all GPU operations to finish before touching any resources
     vulkanDevice->getLogicalDevice().waitIdle();
 
-    // Clean up in reverse order of dependencies
+    // 1. Destroy Scene and Builder
+    // SceneBuilder likely owns Pipelines, PipelineLayouts, and DescriptorSetLayouts.
+    // These MUST be destroyed while the Device still exists.
     scene.reset();
-    sceneBuilder.reset(); // This owns meshes and materials
+    sceneBuilder.reset();
+
+    // 2. Destroy the Renderer
+    // This may hold onto global resources like samplers or descriptor pools.
     renderer.reset();
+
+    // 3. Destroy Frame-specific resources
+    // vulkanFrame often contains per-frame command buffers and descriptors.
     vulkanFrame.reset();
     vulkanSync.reset();
     vulkanCommand.reset();
+
+    // 4. Destroy Render Pass
+    // Framebuffers (owned by Swapchain) depend on this, but resetting it here is safe
+    // as long as the Framebuffers are cleared with the Swapchain below.
     vulkanRenderPass.reset();
+
+    // 5. Destroy Swapchain
+    // This destroys the ImageViews and Framebuffers.
     vulkanSwapchain.reset();
+
+    // 6. Destroy Surface
+    // Surface must be destroyed before the Instance, and after the Swapchain.
     vulkanSurface.reset();
+
+    // 7. Core Device and Instance
+    // The Device is the parent of almost everything above.
+    // It must be the second-to-last thing to go.
     vulkanDevice.reset();
     vulkanInstance.reset();
 }
