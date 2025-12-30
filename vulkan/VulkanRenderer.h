@@ -24,6 +24,7 @@ public:
     void run();
 
 private:
+    void handleInput();
     void initVulkan();
     void initScene();
     void mainLoop();
@@ -31,14 +32,23 @@ private:
 
     GLFWwindow *window;
 
-    // Core Vulkan components
+    // --- Core Vulkan components (Ordered for correct destruction) ---
+    // Destroyed in reverse order:
+    // 1. vulkanFrame
+    // 2. vulkanSync/Command
+    // 3. vulkanRenderPass
+    // 4. vulkanSwapchain (Kills Framebuffers/ImageViews)
+    // 5. vulkanSurface   (Kills Surface Handle) - MUST happen after Swapchain
+    // 6. vulkanDevice    (Kills Logical Device)
+    // 7. vulkanInstance  (Kills Vulkan Instance)
+
     std::unique_ptr<VulkanInstance> vulkanInstance;
     std::unique_ptr<VulkanDevice> vulkanDevice;
+    std::unique_ptr<VulkanSurface> vulkanSurface;
     std::unique_ptr<VulkanSwapchain> vulkanSwapchain;
     std::unique_ptr<VulkanRenderPass> vulkanRenderPass;
     std::unique_ptr<VulkanCommand> vulkanCommand;
     std::unique_ptr<VulkanSync> vulkanSync;
-    std::unique_ptr<VulkanSurface> vulkanSurface;
     std::unique_ptr<VulkanFrame> vulkanFrame;
 
     // Rendering and scene

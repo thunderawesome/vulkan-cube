@@ -37,17 +37,18 @@ void SceneBuilder::createMeshes()
 
 void SceneBuilder::createMaterials()
 {
-    // Load shared texture
+    // Load shared texture (AssetManager will now handle the embedded container.jpg)
     Texture *containerTex = assetManager->loadTexture("container.jpg");
 
-    // Main material (back culled)
-    auto shader1 = std::make_unique<VulkanShader>(deviceRef, "shaders/cube.vert.spv", "shaders/cube.frag.spv");
+    // --- Main material (back culled) ---
+    // We use the new single-argument constructor that loads embedded shaders
+    auto shader1 = std::make_unique<VulkanShader>(deviceRef);
     auto mat1 = std::make_unique<Material>(deviceRef, renderPassRef, std::move(shader1), vk::CullModeFlagBits::eBack);
     mat1->setAlbedoTexture(containerTex);
     materials.push_back(std::move(mat1));
 
-    // Double-sided material
-    auto shader2 = std::make_unique<VulkanShader>(deviceRef, "shaders/cube.vert.spv", "shaders/cube.frag.spv");
+    // --- Double-sided material ---
+    auto shader2 = std::make_unique<VulkanShader>(deviceRef);
     auto mat2 = std::make_unique<Material>(deviceRef, renderPassRef, std::move(shader2), vk::CullModeFlagBits::eNone);
     mat2->setAlbedoTexture(containerTex);
     materials.push_back(std::move(mat2));
