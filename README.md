@@ -4,6 +4,8 @@ A high-performance, cross-platform Vulkan 1.x renderer demonstrating core graphi
 
 This project renders a 3D scene featuring multiple rotating cubes and a bouncing double-sided triangle, all textured using an embedded asset pipeline.
 
+<img width="790" height="631" alt="image" src="https://github.com/user-attachments/assets/6150f927-88ac-4ae2-ba40-f57f6fbe8264" />
+
 ## 🚀 Key Features
 
 * **Self-Contained Binary:** All assets (GLSL shaders and JPG textures) are compiled into SPIR-V and byte arrays at build time and embedded directly into the executable. No external asset folders required.
